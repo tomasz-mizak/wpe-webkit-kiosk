@@ -206,31 +206,6 @@ To span the browser across multiple displays, configure `ubuntu-frame` to presen
 
 The [Cog Wayland platform plugin](https://igalia.github.io/cog/platform-wl.html) accepts additional environment variables for fine-tuning the Wayland integration.
 
-## Releasing
-
-Push a version tag to trigger an automatic build and publish to the Snap Store **edge** channel:
-
-```bash
-git tag v2.50.5
-git push origin v2.50.5
-```
-
-The GitHub Actions workflow builds the snap for amd64 and uploads it to `edge`. To promote to stable:
-
-```bash
-snapcraft promote wpe-webkit-kiosk --from-channel=edge --to-channel=stable
-```
-
-### Prerequisites
-
-The repository requires a `SNAPCRAFT_STORE_CREDENTIALS` secret containing a Snapcraft login token:
-
-```bash
-snapcraft export-login credentials.txt --snaps=wpe-webkit-kiosk --channels=edge --acls=package_upload
-```
-
-Add the file contents as a repository secret in GitHub (Settings → Secrets and variables → Actions).
-
 ## License
 
 MIT
