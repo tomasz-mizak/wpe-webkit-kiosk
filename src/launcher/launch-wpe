@@ -1,0 +1,40 @@
+#!/bin/bash -e
+
+url="$(snapctl get url)"
+devmode="$(snapctl get devmode)"
+debug="$(snapctl get debug)"
+error_to_console="$(snapctl get error-to-console)"
+bgcolor="$(snapctl get bg-color)"
+inspector_server_port="$(snapctl get inspector-server-port)" || 8080
+inspector_http_server_port="$(snapctl get inspector-http-server-port)" || 8090
+
+# Toggle remote debugging
+if [[ $devmode == true ]]; then
+  export WEBKIT_INSPECTOR_SERVER="0.0.0.0:${inspector_server_port}"
+  export WEBKIT_INSPECTOR_HTTP_SERVER="0.0.0.0:${inspector_http_server_port}"
+fi
+
+if [[ $debug == true ]]; then
+  export G_MESSAGES_DEBUG=all
+  export LIBGL_DEBUG=verbose
+  export WAYLAND_DEBUG=1
+  export LIBWPE_DEBUG=all
+  export WEBKIT_SHOW_FPS=1
+fi
+
+if [[ -z "$bgcolor" ]]; then
+	bgcolor=black
+fi
+
+if [ ! -f "$SNAP_USER_DATA/cog.ini" ]; then
+  touch "$SNAP_USER_DATA/cog.ini"
+fi
+
+"$SNAP"/usr/bin/cog \
+  -P wl \
+  --bg-color="$bgcolor" \
+  --config="$SNAP_USER_DATA/cog.ini" \
+  --enable-mediasource=1 \
+  --webprocess-failure=restart \
+  --enable-write-console-messages-to-stdout="$error_to_console" \
+  "$url"

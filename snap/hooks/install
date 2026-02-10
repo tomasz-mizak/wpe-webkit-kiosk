@@ -1,0 +1,4 @@
+#!/bin/sh
+set -x
+
+"$SNAP"/bin/_configure-daemon
