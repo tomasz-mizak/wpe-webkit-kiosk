@@ -5,6 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+ExecStartPre=/bin/mkdir -p /run/user/0
 ExecStart=/usr/bin/cage -- /opt/wpe-webkit-kiosk/bin/wpe-webkit-kiosk
 Restart=always
 RestartSec=3
