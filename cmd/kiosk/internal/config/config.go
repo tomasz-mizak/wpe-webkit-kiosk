@@ -2,8 +2,10 @@ package config
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 )
 
@@ -108,18 +110,39 @@ func (c *Config) Save() error {
 }
 
 // SaveTo writes the config to the specified path.
+// Falls back to sudo tee if direct write fails with permission denied.
 func (c *Config) SaveTo(path string) error {
+	content := c.render()
+
 	f, err := os.Create(path)
 	if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			return c.saveWithSudo(path, content)
+		}
 		return fmt.Errorf("cannot write config: %w", err)
 	}
 	defer f.Close()
 
-	w := bufio.NewWriter(f)
+	_, err = f.WriteString(content)
+	return err
+}
+
+func (c *Config) render() string {
+	var b strings.Builder
 	for _, e := range c.Entries {
-		fmt.Fprintln(w, e.Raw)
+		fmt.Fprintln(&b, e.Raw)
 	}
-	return w.Flush()
+	return b.String()
+}
+
+func (c *Config) saveWithSudo(path, content string) error {
+	cmd := exec.Command("sudo", "tee", path)
+	cmd.Stdin = strings.NewReader(content)
+	cmd.Stdout = nil
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("cannot write config with sudo: %w", err)
+	}
+	return nil
 }
 
 // NeedsRestart returns true if changing the given key requires a service restart.
