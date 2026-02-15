@@ -308,7 +308,13 @@ func openCmd(url string) tea.Cmd {
 		if err := client.Open(url); err != nil {
 			return actionDoneMsg{"Open failed: " + err.Error()}
 		}
-		return actionDoneMsg{"Navigated to " + url}
+
+		if cfg, err := config.Load(config.DefaultPath); err == nil {
+			cfg.Set("URL", url)
+			cfg.Save()
+		}
+
+		return actionDoneMsg{"Navigated to " + url + " (saved)"}
 	}
 }
 
