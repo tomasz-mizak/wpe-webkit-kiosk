@@ -1,0 +1,4 @@
+# Allow kiosk CLI to manage the wpe-webkit-kiosk service without password
+ALL ALL=(root) NOPASSWD: /usr/bin/systemctl restart wpe-webkit-kiosk
+ALL ALL=(root) NOPASSWD: /usr/bin/systemctl start wpe-webkit-kiosk
+ALL ALL=(root) NOPASSWD: /usr/bin/systemctl stop wpe-webkit-kiosk
