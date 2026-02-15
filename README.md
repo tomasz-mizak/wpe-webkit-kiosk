@@ -36,13 +36,13 @@ A Wayland compositor takes pixel buffers from applications, arranges them on scr
 
 [cage](https://github.com/cage-compositor/cage) is the simplest possible compositor -- it takes one application, stretches it fullscreen, and that's it. No window decorations, no taskbar, no effects. This makes it ideal for kiosk use.
 
-### wpe-kiosk-bin (src/kiosk.c)
+### wpe-webkit-kiosk-bin (src/kiosk.c)
 
 Our custom launcher -- ~150 lines of C. It creates a `WebKitWebView` using the WPEPlatform API, sets it to fullscreen, loads the configured URL, and exposes a D-Bus interface (`com.wpe.Kiosk`) on the system bus for remote control (navigate, reload, get current URL).
 
-### wpe-kiosk (shell wrapper)
+### wpe-webkit-kiosk (shell wrapper)
 
-A bash script that reads `/etc/wpe-kiosk/config`, sets up `LD_LIBRARY_PATH` (because WebKit is installed in `/opt/wpe-kiosk`, not in system library paths), configures the Remote Inspector, and executes `wpe-kiosk-bin`.
+A bash script that reads `/etc/wpe-webkit-kiosk/config`, sets up `LD_LIBRARY_PATH` (because WebKit is installed in `/opt/wpe-webkit-kiosk`, not in system library paths), configures the Remote Inspector, and executes `wpe-webkit-kiosk-bin`.
 
 ## Architecture
 
@@ -51,8 +51,8 @@ A bash script that reads `/etc/wpe-kiosk/config`, sets up `LD_LIBRARY_PATH` (bec
 ```
 systemd
   └─ cage (Wayland compositor -- provides the display)
-       └─ wpe-kiosk (wrapper -- reads config, sets environment)
-            └─ wpe-kiosk-bin (our C launcher)
+       └─ wpe-webkit-kiosk (wrapper -- reads config, sets environment)
+            └─ wpe-webkit-kiosk-bin (our C launcher)
                  ├─ WPEPlatform Wayland (connects rendering to cage via linux-dmabuf)
                  ├─ WPENetworkProcess (isolated process for network requests)
                  ├─ WPEWebProcess (isolated process for page rendering)
@@ -65,11 +65,11 @@ WebKit intentionally spawns separate processes for networking and rendering. If 
 
 ```mermaid
 flowchart LR
-    subgraph Service["wpe-kiosk.service"]
+    subgraph Service["wpe-webkit-kiosk.service"]
         direction TB
         CAGE["cage\n(Wayland compositor)"]
-        WRAPPER["wpe-kiosk\n(shell wrapper)"]
-        BIN["wpe-kiosk-bin\n(WPEPlatform browser)"]
+        WRAPPER["wpe-webkit-kiosk\n(shell wrapper)"]
+        BIN["wpe-webkit-kiosk-bin\n(WPEPlatform browser)"]
 
         CAGE --> WRAPPER --> BIN
     end
@@ -84,7 +84,7 @@ flowchart LR
 flowchart BT
     libwpe["libwpe 1.16.3\n(build dependency)"]
     webkit["WPE WebKit 2.50.5\n(browser engine + WPEPlatform)"]
-    launcher["wpe-kiosk-bin\n(custom C launcher)"]
+    launcher["wpe-webkit-kiosk-bin\n(custom C launcher)"]
 
     libwpe --> webkit --> launcher
 ```
@@ -93,7 +93,7 @@ WebKit is compiled with `ENABLE_WPE_PLATFORM=ON` and `ENABLE_WPE_PLATFORM_WAYLAN
 
 ## Configuration
 
-Edit `/etc/wpe-kiosk/config`:
+Edit `/etc/wpe-webkit-kiosk/config`:
 
 ```bash
 URL="https://example.com"
@@ -110,7 +110,7 @@ INSPECTOR_HTTP_PORT="8090"
 After editing, restart the service:
 
 ```bash
-sudo systemctl restart wpe-kiosk
+sudo systemctl restart wpe-webkit-kiosk
 ```
 
 ### Remote Inspector
@@ -148,21 +148,21 @@ sudo apt install cage
 ### Install the package
 
 ```bash
-sudo dpkg -i wpe-kiosk_2.50.5_amd64.deb
+sudo dpkg -i wpe-webkit-kiosk_2.50.5_amd64.deb
 ```
 
 ### Enable and start
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now wpe-kiosk
+sudo systemctl enable --now wpe-webkit-kiosk
 ```
 
 ### Check status
 
 ```bash
-sudo systemctl status wpe-kiosk
-sudo journalctl -u wpe-kiosk -f
+sudo systemctl status wpe-webkit-kiosk
+sudo journalctl -u wpe-webkit-kiosk -f
 ```
 
 ## Building
@@ -177,7 +177,7 @@ sudo journalctl -u wpe-kiosk -f
 make deb
 ```
 
-This produces `output/wpe-kiosk_2.50.5_amd64.deb`. The first build compiles WPE WebKit from source inside Docker (~1h). Subsequent builds reuse the cached WebKit layer and only recompile the launcher.
+This produces `output/wpe-webkit-kiosk_2.50.5_amd64.deb`. The first build compiles WPE WebKit from source inside Docker (~1h). Subsequent builds reuse the cached WebKit layer and only recompile the launcher.
 
 ### Clean
 
@@ -197,8 +197,8 @@ make clean
 └── debian/
     ├── control                 # Package metadata and dependencies
     ├── config                  # Default kiosk configuration
-    ├── wpe-kiosk               # Shell wrapper (reads config, sets env)
-    ├── wpe-kiosk.service       # systemd unit (cage + wpe-kiosk)
+    ├── wpe-webkit-kiosk               # Shell wrapper (reads config, sets env)
+    ├── wpe-webkit-kiosk.service       # systemd unit (cage + wpe-webkit-kiosk)
     └── com.wpe.Kiosk.conf      # D-Bus policy for system bus
 ```
 
