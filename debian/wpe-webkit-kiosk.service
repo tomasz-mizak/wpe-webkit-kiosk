@@ -1,17 +1,17 @@
 [Unit]
 Description=WPE WebKit Kiosk Browser
-After=graphical.target
+Requires=seatd.service
+After=seatd.service network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 ExecStartPre=/bin/mkdir -p /run/user/0
-ExecStart=/usr/bin/cage -- /opt/wpe-webkit-kiosk/bin/wpe-webkit-kiosk
+ExecStart=/usr/bin/cage -s -- /opt/wpe-webkit-kiosk/bin/wpe-webkit-kiosk
 Restart=always
 RestartSec=3
 Environment=XDG_RUNTIME_DIR=/run/user/0
 Environment=WLR_LIBINPUT_NO_DEVICES=1
-Environment=LIBSEAT_BACKEND=builtin
 
 [Install]
 WantedBy=graphical.target
