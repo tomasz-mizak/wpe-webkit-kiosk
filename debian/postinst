@@ -1,0 +1,8 @@
+#!/bin/bash
+set -e
+
+if [ "$1" = "configure" ]; then
+    systemctl daemon-reload
+    systemctl enable wpe-webkit-kiosk.service
+    systemctl start wpe-webkit-kiosk.service || true
+fi
