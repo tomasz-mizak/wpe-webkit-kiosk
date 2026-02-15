@@ -10,7 +10,7 @@ export PKG_CONFIG_PATH
 
 .PHONY: all package
 
-all: launcher package
+all: launcher cli package
 
 # ---------- kiosk launcher ----------
 
@@ -18,9 +18,15 @@ launcher:
 	gcc -O2 -Wall -Wextra -o $(STAGING)$(PREFIX)/bin/wpe-webkit-kiosk-bin /build/src/app/kiosk.c \
 		$$(pkg-config --cflags --libs wpe-webkit-2.0 wpe-platform-2.0)
 
+# ---------- kiosk CLI ----------
+
+cli:
+	mkdir -p $(STAGING)/usr/bin
+	cd /build/src/cli && CGO_ENABLED=0 go build -ldflags='-s -w' -o $(STAGING)/usr/bin/kiosk .
+
 # ---------- package ----------
 
-package: launcher
+package: launcher cli
 	cp /build/debian/wpe-webkit-kiosk $(STAGING)$(PREFIX)/bin/
 	chmod +x $(STAGING)$(PREFIX)/bin/wpe-webkit-kiosk
 	mkdir -p $(STAGING)/etc/wpe-webkit-kiosk
@@ -29,6 +35,9 @@ package: launcher
 	cp /build/debian/wpe-webkit-kiosk.service $(STAGING)/usr/lib/systemd/system/
 	mkdir -p $(STAGING)/usr/share/dbus-1/system.d
 	cp /build/debian/com.wpe.Kiosk.conf $(STAGING)/usr/share/dbus-1/system.d/
+	mkdir -p $(STAGING)/etc/sudoers.d
+	cp /build/debian/sudoers $(STAGING)/etc/sudoers.d/wpe-webkit-kiosk
+	chmod 440 $(STAGING)/etc/sudoers.d/wpe-webkit-kiosk
 	mkdir -p $(STAGING)/DEBIAN
 	cp /build/debian/control $(STAGING)/DEBIAN/
 	cp /build/debian/postinst $(STAGING)/DEBIAN/

@@ -25,8 +25,11 @@ COPY webkit.mk /build/Makefile
 
 RUN make download && make /build/src/.stamp-libwpe && make /build/src/.stamp-webkit
 
-# --- Final image: compile launcher + package (rebuilds on src/debian changes) ---
+# --- Final image: compile launcher + CLI + package (rebuilds on src/debian changes) ---
 FROM webkit
+
+RUN apt-get update && apt-get install -y golang-go \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
 COPY build.mk /build/Makefile

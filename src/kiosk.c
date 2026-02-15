@@ -5,6 +5,7 @@
 #include <stdlib.h>
 
 static WebKitWebView *g_web_view = NULL;
+static WebKitNetworkSession *g_session = NULL;
 
 /* ---- D-Bus interface ---- */
 
@@ -18,8 +19,30 @@ static const gchar introspection_xml[] =
     "    <method name='GetUrl'>"
     "      <arg type='s' name='url' direction='out'/>"
     "    </method>"
+    "    <method name='ClearData'>"
+    "      <arg type='s' name='scope' direction='in'/>"
+    "    </method>"
     "  </interface>"
     "</node>";
+
+static void on_clear_data_finished(GObject *source, GAsyncResult *result,
+                                   gpointer user_data)
+{
+    GDBusMethodInvocation *invocation = (GDBusMethodInvocation *)user_data;
+    GError *error = NULL;
+
+    webkit_website_data_manager_clear_finish(
+        WEBKIT_WEBSITE_DATA_MANAGER(source), result, &error);
+
+    if (error) {
+        g_dbus_method_invocation_return_gerror(invocation, error);
+        g_error_free(error);
+    } else {
+        if (g_web_view)
+            webkit_web_view_reload(g_web_view);
+        g_dbus_method_invocation_return_value(invocation, NULL);
+    }
+}
 
 static void handle_method_call(GDBusConnection *conn,
                                const gchar *sender,
@@ -48,6 +71,46 @@ static void handle_method_call(GDBusConnection *conn,
             ? webkit_web_view_get_uri(g_web_view) : "";
         g_dbus_method_invocation_return_value(
             invocation, g_variant_new("(s)", url ? url : ""));
+    } else if (g_strcmp0(method_name, "ClearData") == 0) {
+        const gchar *scope = NULL;
+        g_variant_get(parameters, "(&s)", &scope);
+
+        WebKitWebsiteDataTypes types = 0;
+        if (g_strcmp0(scope, "cache") == 0) {
+            types = WEBKIT_WEBSITE_DATA_DISK_CACHE
+                  | WEBKIT_WEBSITE_DATA_MEMORY_CACHE;
+        } else if (g_strcmp0(scope, "cookies") == 0) {
+            types = WEBKIT_WEBSITE_DATA_COOKIES;
+        } else if (g_strcmp0(scope, "all") == 0) {
+            types = WEBKIT_WEBSITE_DATA_MEMORY_CACHE
+                  | WEBKIT_WEBSITE_DATA_DISK_CACHE
+                  | WEBKIT_WEBSITE_DATA_OFFLINE_APPLICATION_CACHE
+                  | WEBKIT_WEBSITE_DATA_SESSION_STORAGE
+                  | WEBKIT_WEBSITE_DATA_LOCAL_STORAGE
+                  | WEBKIT_WEBSITE_DATA_COOKIES
+                  | WEBKIT_WEBSITE_DATA_DEVICE_ID_HASH_SALT
+                  | WEBKIT_WEBSITE_DATA_HSTS_CACHE
+                  | WEBKIT_WEBSITE_DATA_ITP
+                  | WEBKIT_WEBSITE_DATA_SERVICE_WORKER_REGISTRATIONS
+                  | WEBKIT_WEBSITE_DATA_DOM_CACHE;
+        } else {
+            g_dbus_method_invocation_return_dbus_error(invocation,
+                "com.wpe.Kiosk.Error.InvalidScope",
+                "Scope must be 'cache', 'cookies', or 'all'");
+            return;
+        }
+
+        if (!g_session) {
+            g_dbus_method_invocation_return_dbus_error(invocation,
+                "com.wpe.Kiosk.Error.NotReady",
+                "Kiosk session not initialized");
+            return;
+        }
+
+        WebKitWebsiteDataManager *manager =
+            webkit_network_session_get_website_data_manager(g_session);
+        webkit_website_data_manager_clear(manager, types, 0, NULL,
+                                          on_clear_data_finished, invocation);
     }
 }
 
@@ -106,7 +169,7 @@ static void activate(GApplication *app, gpointer user_data)
 
     g_application_hold(app);
 
-    WebKitNetworkSession *session = webkit_network_session_new(NULL, NULL);
+    g_session = webkit_network_session_new(NULL, NULL);
 
     WebKitSettings *settings = webkit_settings_new_with_settings(
         "enable-developer-extras", FALSE,
@@ -114,7 +177,7 @@ static void activate(GApplication *app, gpointer user_data)
         NULL);
 
     WebKitWebView *view = WEBKIT_WEB_VIEW(g_object_new(WEBKIT_TYPE_WEB_VIEW,
-        "network-session", session,
+        "network-session", g_session,
         "settings", settings,
         NULL));
 
@@ -137,8 +200,6 @@ static void activate(GApplication *app, gpointer user_data)
                    "com.wpe.Kiosk",
                    G_BUS_NAME_OWNER_FLAGS_NONE,
                    on_bus_acquired, NULL, NULL, NULL, NULL);
-
-    g_object_unref(session);
 }
 
 int main(int argc, char *argv[])
@@ -151,6 +212,8 @@ int main(int argc, char *argv[])
 
     int status = g_application_run(app, 0, NULL);
 
+    if (g_session)
+        g_object_unref(g_session);
     g_object_unref(app);
     return status;
 }
