@@ -13,5 +13,15 @@ RestartSec=3
 Environment=XDG_RUNTIME_DIR=/run/user/0
 Environment=WLR_LIBINPUT_NO_DEVICES=1
 
+# --- Resource limits (uncomment to enable) ---
+# Limit CPU usage. 100% = one full core, 200% = two cores, etc.
+#CPUQuota=200%
+# Pin process to specific CPU cores (0-indexed).
+#CPUAffinity=0 1
+# Maximum memory usage. Process is killed (and restarted) if exceeded.
+#MemoryMax=1G
+# Maximum number of tasks (threads + processes) spawned by the service.
+#TasksMax=64
+
 [Install]
 WantedBy=graphical.target
