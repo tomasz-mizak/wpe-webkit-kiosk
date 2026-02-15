@@ -1,0 +1,6 @@
+# WPE Kiosk configuration
+# After editing, restart the service: sudo systemctl restart wpe-kiosk
+
+URL="https://wpewebkit.org"
+INSPECTOR_PORT="8080"
+INSPECTOR_HTTP_PORT="8090"

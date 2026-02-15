@@ -1,0 +1,18 @@
+Package: wpe-kiosk
+Version: 2.50.5
+Section: web
+Priority: optional
+Architecture: amd64
+Maintainer: Tomasz Mizak
+Description: WPE WebKit kiosk browser
+ Fullscreen web browser for kiosk applications on Wayland, using WPE WebKit
+ with WPEPlatform API. Includes systemd service for daemon mode and D-Bus
+ remote control interface.
+Depends: libegl1, libepoxy0, libglib2.0-0, libgstreamer1.0-0,
+ libgstreamer-plugins-base1.0-0, libgstreamer-gl1.0-0,
+ gstreamer1.0-plugins-bad, libharfbuzz-icu0, libicu74,
+ libsoup-3.0-0, libsqlite3-0, libwayland-client0, libwayland-egl1,
+ libwayland-server0, libwebp7, libxml2, libxslt1.1, libcairo2,
+ libfontconfig1, libfreetype6, libgbm1, libgcrypt20, libxkbcommon0,
+ libatk1.0-0, libatk-bridge2.0-0, libsystemd0, libwoff1, libavif16,
+ libdrm2, libinput10, cage

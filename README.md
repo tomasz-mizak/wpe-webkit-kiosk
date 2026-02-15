@@ -1,210 +1,206 @@
 # WPE WebKit Kiosk
 
-A [snap](https://snapcraft.io) package of [WPE WebKit](https://wpewebkit.org) for fullscreen kiosk applications. It bundles the WPE browser engine, the [Cog](https://github.com/Igalia/cog) web app container, and all required runtime libraries into a single, self-contained snap.
+A `.deb` package of [WPE WebKit](https://wpewebkit.org) for fullscreen kiosk applications on Ubuntu. Uses the modern [WPEPlatform API](https://wpewebkit.org) with `linux-dmabuf` buffer sharing -- no dependency on deprecated EGL extensions.
 
 ## Tested platforms
 
 | Platform | Status |
 |---|---|
-| Ubuntu Desktop 22.04+ (Wayland session) | Supported |
-| Ubuntu Core + [ubuntu-frame](https://snapcraft.io/ubuntu-frame) on Raspberry Pi 3B/3B+/4B | Supported |
-| Any [snapd-supported distro](https://docs.snapcraft.io/installing-snapd/6735) with Wayland compositor | Should work |
+| Ubuntu 24.04 LTS (amd64, Wayland) | Supported |
+
+## Technology stack
+
+### WebKit
+
+The browser engine -- the same core that powers Safari. It parses HTML/CSS, executes JavaScript, and renders web pages. There are three major "ports" of WebKit:
+
+- **Apple WebKit** -- Safari on macOS/iOS
+- **WebKitGTK** -- for GNOME desktop apps (e.g. Epiphany)
+- **WPE WebKit** -- for embedded/kiosk devices (this project)
+
+### WPE (Web Platform for Embedded)
+
+A WebKit port optimized for devices without a full desktop environment -- set-top boxes, kiosks, in-vehicle infotainment. Developed by [Igalia](https://igalia.com). Unlike WebKitGTK, it does not require GTK or a desktop stack -- it renders directly through EGL/DRM.
+
+### libwpe
+
+A small library (~200KB) that defines the platform abstraction for WPE WebKit. WebKit compiles against it to communicate with the graphics system. In our build it is purely a build-time dependency -- WebKit will not compile without it, but at runtime it has no active role.
+
+### WPEPlatform API
+
+A built-in mechanism (since WebKit 2.44+) for connecting WebKit to Wayland. It uses the `linux-dmabuf` protocol for GPU buffer sharing, which is the modern standard supported by all current Mesa versions. This replaces the older `wpebackend-fdo` + `Cog` stack, which depended on an EGL extension (`eglCreateWaylandBufferFromImageWL`) that Mesa 25.2+ removed.
+
+### cage (Wayland compositor)
+
+A Wayland compositor takes pixel buffers from applications, arranges them on screen (position, size, z-order), optionally adds effects (shadows, transparency), and sends the final composited image to the display. Think of it as a video editor that layers multiple sources into one output frame.
+
+[cage](https://github.com/cage-compositor/cage) is the simplest possible compositor -- it takes one application, stretches it fullscreen, and that's it. No window decorations, no taskbar, no effects. This makes it ideal for kiosk use.
+
+### wpe-kiosk-bin (src/kiosk.c)
+
+Our custom launcher -- ~150 lines of C. It creates a `WebKitWebView` using the WPEPlatform API, sets it to fullscreen, loads the configured URL, and exposes a D-Bus interface (`com.wpe.Kiosk`) on the system bus for remote control (navigate, reload, get current URL).
+
+### wpe-kiosk (shell wrapper)
+
+A bash script that reads `/etc/wpe-kiosk/config`, sets up `LD_LIBRARY_PATH` (because WebKit is installed in `/opt/wpe-kiosk`, not in system library paths), configures the Remote Inspector, and executes `wpe-kiosk-bin`.
 
 ## Architecture
 
-### Runtime overview
+### Runtime process tree
+
+```
+systemd
+  └─ cage (Wayland compositor -- provides the display)
+       └─ wpe-kiosk (wrapper -- reads config, sets environment)
+            └─ wpe-kiosk-bin (our C launcher)
+                 ├─ WPEPlatform Wayland (connects rendering to cage via linux-dmabuf)
+                 ├─ WPENetworkProcess (isolated process for network requests)
+                 ├─ WPEWebProcess (isolated process for page rendering)
+                 └─ D-Bus (com.wpe.Kiosk -- remote control interface)
+```
+
+WebKit intentionally spawns separate processes for networking and rendering. If a web page crashes, the main process and the compositor survive and reload the page automatically.
+
+### Runtime diagram
 
 ```mermaid
 flowchart LR
-    subgraph Snap["wpe-webkit-kiosk snap"]
+    subgraph Service["wpe-kiosk.service"]
         direction TB
-        GFX[graphics-core22-wrapper]
-        WL[wayland-launch]
-        ARCH[set-arch-triplet]
-        GIO[gio-updater]
-        LAUNCH[launch-wpe]
-        COG["cog (browser)"]
-        WATCH[restart-watcher]
+        CAGE["cage\n(Wayland compositor)"]
+        WRAPPER["wpe-kiosk\n(shell wrapper)"]
+        BIN["wpe-kiosk-bin\n(WPEPlatform browser)"]
 
-        GFX --> WL --> ARCH --> GIO --> LAUNCH --> COG
+        CAGE --> WRAPPER --> BIN
     end
 
-    Compositor["Wayland compositor\n(ubuntu-frame / mutter / ...)"] <--> |Wayland protocol| WL
-    Mesa["mesa-core22\n(GPU drivers)"] --> GFX
-    WATCH -->|monitors socket,\nrestarts daemon| COG
+    GPU["Mesa / DRM"] <--> CAGE
+    DBUS["D-Bus\n(com.wpe.Kiosk)"] <--> BIN
 ```
 
-The browser starts through a **command chain** -- each wrapper sets up part of the environment before passing control to the next one:
-
-| Step | Script | Role |
-|---|---|---|
-| 1 | `graphics-core22-wrapper` | Configures GPU driver paths from `mesa-core22` content snap |
-| 2 | `wayland-launch` | Waits for the Wayland socket, symlinks it into the snap runtime dir |
-| 3 | `set-arch-triplet` | Exports `X_DEBIAN_MULTIARCH_TRIPLET` for the host CPU architecture |
-| 4 | `gio-updater` | Rebuilds GIO module cache after snap refresh (needed for TLS/SSL) |
-| 5 | `launch-wpe` | Reads snap config, sets env vars, launches `cog` |
-
-### Build-time components
+### Build-time dependency chain
 
 ```mermaid
 flowchart BT
-    libwpe["libwpe 1.16.3\n(platform abstraction)"]
-    fdo["wpebackend-fdo 1.16.1\n(Wayland/EGL backend)"]
-    webkit["wpe-webkit 2.50.5\n(browser engine, built with Clang 18)"]
-    cog["cog 0.18.5\n(web app container)"]
+    libwpe["libwpe 1.16.3\n(build dependency)"]
+    webkit["WPE WebKit 2.50.5\n(browser engine + WPEPlatform)"]
+    launcher["wpe-kiosk-bin\n(custom C launcher)"]
 
-    libwpe --> fdo --> webkit --> cog
+    libwpe --> webkit --> launcher
 ```
 
-All four components are compiled from source in the snap build (see `snap/snapcraft.yaml`). The build order follows their dependency chain -- `libwpe` first, then `wpebackend-fdo`, `wpe-webkit`, and finally `cog`.
-
-### Snap services
-
-On **Ubuntu Core**, the snap runs two daemons automatically:
-
-- **`daemon`** -- the main browser process (Cog + WPE WebKit)
-- **`restart-watcher`** -- monitors `/run/user/0/wayland-0` and restarts the browser when the compositor restarts (e.g. after an `ubuntu-frame` refresh)
-
-On **desktop systems**, daemon mode is disabled by default. You launch the browser manually with `wpe-webkit-kiosk.cog`.
+WebKit is compiled with `ENABLE_WPE_PLATFORM=ON` and `ENABLE_WPE_PLATFORM_WAYLAND=ON`, providing built-in Wayland support via the `linux-dmabuf` protocol.
 
 ## Configuration
 
-All options are managed via `snap set` / `snap get`:
+Edit `/etc/wpe-kiosk/config`:
 
 ```bash
-snap set wpe-webkit-kiosk url=https://example.com
-snap get wpe-webkit-kiosk url
+URL="https://example.com"
+INSPECTOR_PORT="8080"
+INSPECTOR_HTTP_PORT="8090"
 ```
 
 | Option | Default | Description |
 |---|---|---|
-| `url` | `https://wpewebkit.org` | Page to display. Must start with `http://` or `https://` |
-| `devmode` | `false` | Enable WebKit Remote Inspector |
-| `debug` | `false` | Enable verbose debug logging (GLib, Wayland, libwpe, WebKit FPS) |
-| `error-to-console` | `false` | Log JavaScript errors to the service log |
-| `bg-color` | `black` | Default background color while loading |
-| `inspector-server-port` | `8080` | Remote Inspector port (`inspector://<host>:<port>`) |
-| `inspector-http-server-port` | `8090` | HTTP Inspector port (`http://<host>:<port>`) |
-| `daemon` | auto-detected | `true` on Ubuntu Core, `false` on desktop. Controls whether the browser runs as a service |
+| `URL` | `https://wpewebkit.org` | Page to display |
+| `INSPECTOR_PORT` | `8080` | Remote Inspector port |
+| `INSPECTOR_HTTP_PORT` | `8090` | HTTP Inspector port |
+
+After editing, restart the service:
+
+```bash
+sudo systemctl restart wpe-kiosk
+```
 
 ### Remote Inspector
 
-When `devmode=true`, two inspector endpoints are available:
+The Remote Inspector is always enabled. Two endpoints are available:
 
-- **Inspector protocol** at `inspector://<ip>:8080` -- works with WebKitGTK-based browsers
-- **HTTP inspector** at `http://<ip>:8090` -- works in any modern browser
+- **Inspector protocol** at `inspector://<ip>:8080`
+- **HTTP inspector** at `http://<ip>:8090`
 
 ### D-Bus control
 
-The snap exposes `com.igalia.Cog` on the **system** D-Bus. Other snaps can plug this interface to remote-control the browser (navigate, reload, etc.) using the full [cogctl](https://github.com/Igalia/cog) command set.
-
-## Hardware acceleration
+The kiosk exposes `com.wpe.Kiosk` on the **system** D-Bus:
 
 ```bash
-snap install mesa-core22
-snap connect wpe-webkit-kiosk:graphics-core22 mesa-core22:graphics-core22
+# Navigate to a URL
+sudo dbus-send --system --print-reply --dest=com.wpe.Kiosk / com.wpe.Kiosk.Open string:'https://example.com'
+
+# Get current URL
+sudo dbus-send --system --print-reply --dest=com.wpe.Kiosk / com.wpe.Kiosk.GetUrl
+
+# Reload page
+sudo dbus-send --system --print-reply --dest=com.wpe.Kiosk / com.wpe.Kiosk.Reload
 ```
 
-For vendor-specific GPU drivers:
+## Installation
+
+### Prerequisites
+
+The target system needs [cage](https://github.com/cage-compositor/cage) installed:
 
 ```bash
-snap connect wpe-webkit-kiosk:graphics-core22 vendor-mesa-core22:graphics-core22
+sudo apt install cage
 ```
 
-## Usage
-
-### Desktop (windowed mode)
+### Install the package
 
 ```bash
-wpe-webkit-kiosk.cog
+sudo dpkg -i wpe-kiosk_2.50.5_amd64.deb
 ```
 
-To set the window size:
+### Enable and start
 
 ```bash
-export COG_PLATFORM_WL_VIEW_WIDTH=1280
-export COG_PLATFORM_WL_VIEW_HEIGHT=720
-wpe-webkit-kiosk.cog
+sudo systemctl daemon-reload
+sudo systemctl enable --now wpe-kiosk
 ```
 
-### Ubuntu Core (daemon mode)
-
-The browser starts automatically after installation. Use snap configuration to control it:
+### Check status
 
 ```bash
-snap set wpe-webkit-kiosk url=https://example.com
-snap logs wpe-webkit-kiosk.daemon
-```
-
-### Clear cache
-
-```bash
-wpe-webkit-kiosk.clear-cache
-```
-
-This removes cached data and restarts the browser.
-
-### List available web settings
-
-```bash
-wpe-webkit-kiosk.list-websettings
+sudo systemctl status wpe-kiosk
+sudo journalctl -u wpe-kiosk -f
 ```
 
 ## Building
 
 ### Prerequisites
 
-- [snapcraft](https://snapcraft.io/snapcraft) (`snap install snapcraft --classic`)
-- [LXD](https://snapcraft.io/lxd) (`snap install lxd && lxd init --auto`)
+- Docker
 
 ### Build
 
 ```bash
-snapcraft
+make deb
 ```
 
-This creates a `.snap` file for the host architecture. The build compiles WPE WebKit from source, which is resource-intensive.
+This produces `output/wpe-kiosk_2.50.5_amd64.deb`. The first build compiles WPE WebKit from source inside Docker (~1h). Subsequent builds reuse the cached WebKit layer and only recompile the launcher.
 
-### Install locally
+### Clean
 
 ```bash
-snap install wpe-webkit-kiosk_*.snap --dangerous
+make clean
 ```
 
 ## Project structure
 
 ```
 .
-├── snap/
-│   ├── snapcraft.yaml          # Snap build recipe
-│   └── hooks/
-│       ├── install              # Auto-detects daemon mode on first install
-│       ├── post-refresh         # Re-evaluates daemon mode after snap update
-│       └── configure            # Validates config, manages daemon lifecycle
+├── Dockerfile                  # Multi-stage Docker build (WebKit cached)
+├── Makefile                    # Top-level build: `make deb`
+├── build.mk                   # Inner Makefile: libwpe, WebKit, launcher
 ├── src/
-│   ├── launcher/
-│   │   ├── launch-wpe           # Main entry point -- reads config, launches cog
-│   │   ├── set-arch-triplet     # Exports Debian multiarch triplet
-│   │   ├── gio-updater          # Rebuilds GIO module cache per revision
-│   │   ├── _configure-daemon    # Detects Ubuntu Core vs desktop
-│   │   └── clear-cache          # Wipes cache and restarts browser
-│   └── watcher/
-│       └── watcher              # Monitors Wayland socket, restarts daemon
-├── wayland-launch/
-│   └── bin/
-│       ├── wayland-launch       # Waits for Wayland socket, sets up symlinks
-│       └── setup.sh             # Helper for connecting snap interfaces
-├── Dockerfile.build             # Alternative Docker-based build environment
-└── LICENSE                      # MIT
+│   └── kiosk.c                # WPEPlatform launcher with D-Bus interface
+└── debian/
+    ├── control                 # Package metadata and dependencies
+    ├── config                  # Default kiosk configuration
+    ├── wpe-kiosk               # Shell wrapper (reads config, sets env)
+    ├── wpe-kiosk.service       # systemd unit (cage + wpe-kiosk)
+    └── com.wpe.Kiosk.conf      # D-Bus policy for system bus
 ```
-
-## Multi-display setup
-
-To span the browser across multiple displays, configure `ubuntu-frame` to present them as a single logical display. See the [ubuntu-frame documentation](https://mir-server.io/docs/display-configuration) for details.
-
-## Environment variables
-
-The [Cog Wayland platform plugin](https://igalia.github.io/cog/platform-wl.html) accepts additional environment variables for fine-tuning the Wayland integration.
 
 ## License
 

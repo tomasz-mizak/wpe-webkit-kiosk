@@ -1,5 +1,0 @@
-#!/bin/sh -e
-
-rm -rf ${SNAP_COMMON}/.cache/*
-rm -rf ${SNAP_USER_COMMON}/.cache/*
-snapctl restart "$SNAP_INSTANCE_NAME"
