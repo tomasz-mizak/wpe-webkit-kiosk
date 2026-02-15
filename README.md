@@ -8,9 +8,60 @@ A `.deb` package of [WPE WebKit](https://wpewebkit.org) for fullscreen kiosk app
 |---|---|
 | Ubuntu 24.04 LTS (amd64, Wayland) | Supported |
 
+## Technology stack
+
+### WebKit
+
+The browser engine -- the same core that powers Safari. It parses HTML/CSS, executes JavaScript, and renders web pages. There are three major "ports" of WebKit:
+
+- **Apple WebKit** -- Safari on macOS/iOS
+- **WebKitGTK** -- for GNOME desktop apps (e.g. Epiphany)
+- **WPE WebKit** -- for embedded/kiosk devices (this project)
+
+### WPE (Web Platform for Embedded)
+
+A WebKit port optimized for devices without a full desktop environment -- set-top boxes, kiosks, in-vehicle infotainment. Developed by [Igalia](https://igalia.com). Unlike WebKitGTK, it does not require GTK or a desktop stack -- it renders directly through EGL/DRM.
+
+### libwpe
+
+A small library (~200KB) that defines the platform abstraction for WPE WebKit. WebKit compiles against it to communicate with the graphics system. In our build it is purely a build-time dependency -- WebKit will not compile without it, but at runtime it has no active role.
+
+### WPEPlatform API
+
+A built-in mechanism (since WebKit 2.44+) for connecting WebKit to Wayland. It uses the `linux-dmabuf` protocol for GPU buffer sharing, which is the modern standard supported by all current Mesa versions. This replaces the older `wpebackend-fdo` + `Cog` stack, which depended on an EGL extension (`eglCreateWaylandBufferFromImageWL`) that Mesa 25.2+ removed.
+
+### cage (Wayland compositor)
+
+A Wayland compositor takes pixel buffers from applications, arranges them on screen (position, size, z-order), optionally adds effects (shadows, transparency), and sends the final composited image to the display. Think of it as a video editor that layers multiple sources into one output frame.
+
+[cage](https://github.com/cage-compositor/cage) is the simplest possible compositor -- it takes one application, stretches it fullscreen, and that's it. No window decorations, no taskbar, no effects. This makes it ideal for kiosk use.
+
+### wpe-kiosk-bin (src/kiosk.c)
+
+Our custom launcher -- ~150 lines of C. It creates a `WebKitWebView` using the WPEPlatform API, sets it to fullscreen, loads the configured URL, and exposes a D-Bus interface (`com.wpe.Kiosk`) on the system bus for remote control (navigate, reload, get current URL).
+
+### wpe-kiosk (shell wrapper)
+
+A bash script that reads `/etc/wpe-kiosk/config`, sets up `LD_LIBRARY_PATH` (because WebKit is installed in `/opt/wpe-kiosk`, not in system library paths), configures the Remote Inspector, and executes `wpe-kiosk-bin`.
+
 ## Architecture
 
-### Runtime overview
+### Runtime process tree
+
+```
+systemd
+  └─ cage (Wayland compositor -- provides the display)
+       └─ wpe-kiosk (wrapper -- reads config, sets environment)
+            └─ wpe-kiosk-bin (our C launcher)
+                 ├─ WPEPlatform Wayland (connects rendering to cage via linux-dmabuf)
+                 ├─ WPENetworkProcess (isolated process for network requests)
+                 ├─ WPEWebProcess (isolated process for page rendering)
+                 └─ D-Bus (com.wpe.Kiosk -- remote control interface)
+```
+
+WebKit intentionally spawns separate processes for networking and rendering. If a web page crashes, the main process and the compositor survive and reload the page automatically.
+
+### Runtime diagram
 
 ```mermaid
 flowchart LR
@@ -27,9 +78,7 @@ flowchart LR
     DBUS["D-Bus\n(com.wpe.Kiosk)"] <--> BIN
 ```
 
-The systemd service starts [cage](https://github.com/cage-compositor/cage) (a minimal Wayland compositor for kiosk mode), which launches the wrapper script. The wrapper reads `/etc/wpe-kiosk/config`, sets up library paths, and executes `wpe-kiosk-bin`.
-
-### Build-time components
+### Build-time dependency chain
 
 ```mermaid
 flowchart BT
