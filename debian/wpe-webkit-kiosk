@@ -2,8 +2,8 @@
 # WPE Kiosk launcher — reads config and starts the kiosk binary
 set -euo pipefail
 
-PREFIX=/opt/wpe-kiosk
-CONFIG=/etc/wpe-kiosk/config
+PREFIX=/opt/wpe-webkit-kiosk
+CONFIG=/etc/wpe-webkit-kiosk/config
 
 # Defaults
 URL="https://wpewebkit.org"
@@ -28,4 +28,4 @@ export WPE_PLATFORM_MODULE_DIR="${PREFIX}/lib/${ARCH}/wpe-platform-2.0/modules"
 export WEBKIT_INSPECTOR_SERVER="0.0.0.0:${INSPECTOR_PORT}"
 export WEBKIT_INSPECTOR_HTTP_SERVER="0.0.0.0:${INSPECTOR_HTTP_PORT}"
 
-exec "${PREFIX}/bin/wpe-kiosk-bin" "$URL"
+exec "${PREFIX}/bin/wpe-webkit-kiosk-bin" "$URL"

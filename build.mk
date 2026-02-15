@@ -2,7 +2,7 @@
 LIBWPE_VER       := 1.16.3
 WEBKIT_VER       := 2.50.5
 
-PREFIX           := /opt/wpe-kiosk
+PREFIX           := /opt/wpe-webkit-kiosk
 JOBS             := $(shell nproc)
 ARCH             := $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
 SRC              := /build/src
@@ -73,21 +73,21 @@ $(STAMP_WEBKIT): $(STAMP_LIBWPE) $(WEBKIT_TAR)
 # ---------- kiosk launcher ----------
 
 $(STAMP_LAUNCHER): $(STAMP_WEBKIT)
-	gcc -O2 -Wall -Wextra -o $(STAGING)$(PREFIX)/bin/wpe-kiosk-bin /build/src/app/kiosk.c \
+	gcc -O2 -Wall -Wextra -o $(STAGING)$(PREFIX)/bin/wpe-webkit-kiosk-bin /build/src/app/kiosk.c \
 		$$(pkg-config --cflags --libs wpe-webkit-2.0 wpe-platform-2.0)
 	touch $@
 
 # ---------- package ----------
 
 package: $(STAMP_LAUNCHER)
-	cp /build/debian/wpe-kiosk $(STAGING)$(PREFIX)/bin/
-	chmod +x $(STAGING)$(PREFIX)/bin/wpe-kiosk
-	mkdir -p $(STAGING)/etc/wpe-kiosk
-	cp /build/debian/config $(STAGING)/etc/wpe-kiosk/
+	cp /build/debian/wpe-webkit-kiosk $(STAGING)$(PREFIX)/bin/
+	chmod +x $(STAGING)$(PREFIX)/bin/wpe-webkit-kiosk
+	mkdir -p $(STAGING)/etc/wpe-webkit-kiosk
+	cp /build/debian/config $(STAGING)/etc/wpe-webkit-kiosk/
 	mkdir -p $(STAGING)/usr/lib/systemd/system
-	cp /build/debian/wpe-kiosk.service $(STAGING)/usr/lib/systemd/system/
+	cp /build/debian/wpe-webkit-kiosk.service $(STAGING)/usr/lib/systemd/system/
 	mkdir -p $(STAGING)/usr/share/dbus-1/system.d
 	cp /build/debian/com.wpe.Kiosk.conf $(STAGING)/usr/share/dbus-1/system.d/
 	mkdir -p $(STAGING)/DEBIAN
 	cp /build/debian/control $(STAGING)/DEBIAN/
-	dpkg-deb --build $(STAGING) /output/wpe-kiosk_$(WEBKIT_VER)_amd64.deb
+	dpkg-deb --build $(STAGING) /output/wpe-webkit-kiosk_$(WEBKIT_VER)_amd64.deb
