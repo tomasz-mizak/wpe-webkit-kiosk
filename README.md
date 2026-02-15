@@ -48,7 +48,6 @@ Edit `/etc/wpe-kiosk/config`:
 
 ```bash
 URL="https://example.com"
-DEVMODE="false"
 INSPECTOR_PORT="8080"
 INSPECTOR_HTTP_PORT="8090"
 ```
@@ -56,7 +55,6 @@ INSPECTOR_HTTP_PORT="8090"
 | Option | Default | Description |
 |---|---|---|
 | `URL` | `https://wpewebkit.org` | Page to display |
-| `DEVMODE` | `false` | Enable WebKit Remote Inspector |
 | `INSPECTOR_PORT` | `8080` | Remote Inspector port |
 | `INSPECTOR_HTTP_PORT` | `8090` | HTTP Inspector port |
 
@@ -68,7 +66,7 @@ sudo systemctl restart wpe-kiosk
 
 ### Remote Inspector
 
-When `DEVMODE="true"`, two inspector endpoints are available:
+The Remote Inspector is always enabled. Two endpoints are available:
 
 - **Inspector protocol** at `inspector://<ip>:8080`
 - **HTTP inspector** at `http://<ip>:8090`

@@ -7,7 +7,6 @@ CONFIG=/etc/wpe-kiosk/config
 
 # Defaults
 URL="https://wpewebkit.org"
-DEVMODE="false"
 INSPECTOR_PORT="8080"
 INSPECTOR_HTTP_PORT="8090"
 
@@ -26,9 +25,7 @@ export XDG_DATA_DIRS="${PREFIX}/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/sha
 export WPE_PLATFORM_MODULE_DIR="${PREFIX}/lib/${ARCH}/wpe-platform-2.0/modules"
 
 # Remote inspector
-if [ "$DEVMODE" = "true" ]; then
-    export WEBKIT_INSPECTOR_SERVER="0.0.0.0:${INSPECTOR_PORT}"
-    export WEBKIT_INSPECTOR_HTTP_SERVER="0.0.0.0:${INSPECTOR_HTTP_PORT}"
-fi
+export WEBKIT_INSPECTOR_SERVER="0.0.0.0:${INSPECTOR_PORT}"
+export WEBKIT_INSPECTOR_HTTP_SERVER="0.0.0.0:${INSPECTOR_HTTP_PORT}"
 
 exec "${PREFIX}/bin/wpe-kiosk-bin" "$URL"
