@@ -17,17 +17,18 @@ RUN apt-get update && apt-get install -y \
     libwayland-bin \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# --- Stage: compile WebKit (cached unless build.mk changes) ---
+# --- Stage: compile WebKit (cached unless webkit.mk or versions change) ---
 FROM base AS webkit
+
+WORKDIR /build
+COPY webkit.mk /build/Makefile
+
+RUN make download && make /build/src/.stamp-libwpe && make /build/src/.stamp-webkit
+
+# --- Final image: compile launcher + package (rebuilds on src/debian changes) ---
+FROM webkit
 
 WORKDIR /build
 COPY build.mk /build/Makefile
 
-RUN make download && make /build/src/.stamp-libwpe && make /build/src/.stamp-webkit
-
-# --- Final image: compile launcher + package at run time ---
-FROM webkit
-
-WORKDIR /build
-
-CMD ["make", "/build/src/.stamp-launcher", "package"]
+CMD ["make"]
