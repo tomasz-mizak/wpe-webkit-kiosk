@@ -28,6 +28,15 @@ var (
 			Foreground(lipgloss.Color("245")).
 			Width(14)
 
+	colNameStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("245")).
+			Width(12)
+
+	colHeaderStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("245")).
+			Bold(true).
+			Width(12)
+
 	activeStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("42")).
 			Bold(true)
@@ -52,13 +61,14 @@ var (
 
 type tickMsg time.Time
 type refreshMsg struct {
-	state    string
-	url      string
-	since    string
-	cfgURL   string
-	cfgInsp  string
-	cfgHTTP  string
-	vncState string
+	state     string
+	url       string
+	since     string
+	cfgURL    string
+	cfgInsp   string
+	cfgHTTP   string
+	cfgVNC    string
+	cfgCursor string
 }
 type actionDoneMsg struct{ text string }
 
@@ -72,14 +82,15 @@ const (
 )
 
 type model struct {
-	state      string
-	url        string
-	since      string
-	cfgURL     string
-	cfgInsp    string
-	cfgHTTP    string
-	vncState   string
-	message    string
+	state     string
+	url       string
+	since     string
+	cfgURL    string
+	cfgInsp   string
+	cfgHTTP   string
+	cfgVNC    string
+	cfgCursor string
+	message   string
 	mode       mode
 	input      string
 	quitting   bool
@@ -108,7 +119,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cfgURL = msg.cfgURL
 		m.cfgInsp = msg.cfgInsp
 		m.cfgHTTP = msg.cfgHTTP
-		m.vncState = msg.vncState
+		m.cfgVNC = msg.cfgVNC
+		m.cfgCursor = msg.cfgCursor
 		return m, nil
 
 	case actionDoneMsg:
@@ -146,6 +158,9 @@ func (m model) handleNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "v":
 		m.message = "Toggling VNC..."
 		return m, toggleVNCCmd()
+	case "m":
+		m.message = "Toggling cursor..."
+		return m, toggleCursorCmd()
 	}
 	return m, nil
 }
@@ -200,16 +215,10 @@ func (m model) View() string {
 		sinceStr = "-"
 	}
 
-	vncStr := inactiveStyle.Render("off")
-	if m.vncState == "active" {
-		vncStr = activeStyle.Render("on")
-	}
-
 	status := strings.Join([]string{
 		labelStyle.Render("Service:") + "  " + stateStr,
 		labelStyle.Render("Since:") + "  " + sinceStr,
 		labelStyle.Render("URL:") + "  " + urlStr,
-		labelStyle.Render("VNC:") + "  " + vncStr,
 	}, "\n")
 
 	cfg := strings.Join([]string{
@@ -218,11 +227,20 @@ func (m model) View() string {
 		labelStyle.Render("HTTP Insp.:") + "  " + m.cfgHTTP,
 	}, "\n")
 
+	panelHeader := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
+
 	statusPanel := panelStyle.Render(
-		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15")).Render("Status") + "\n\n" + status,
+		panelHeader.Render("Status") + "\n\n" + status,
 	)
 	configPanel := panelStyle.Render(
-		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15")).Render("Config") + "\n\n" + cfg,
+		panelHeader.Render("Config") + "\n\n" + cfg,
+	)
+
+	featuresPanel := panelStyle.Render(
+		panelHeader.Render("Features") + "\n\n" +
+			colHeaderStyle.Render("Name") + colHeaderStyle.Render("Config") + "\n" +
+			featureRow("VNC", m.cfgVNC, "true") + "\n" +
+			featureRow("Cursor", m.cfgCursor, "true"),
 	)
 
 	var msgLine string
@@ -232,13 +250,14 @@ func (m model) View() string {
 		msgLine = messageStyle.Render(m.message)
 	}
 
-	help := helpStyle.Render("[o] open URL  [r] reload  [R] restart  [c] clear data  [v] toggle VNC  [q] quit")
+	help := helpStyle.Render("[o] open URL  [r] reload  [R] restart  [c] clear data  [v] toggle VNC  [m] toggle cursor  [q] quit")
 
 	parts := []string{
 		titleStyle.Render(" WPE WebKit Kiosk "),
 		"",
 		statusPanel,
 		configPanel,
+		featuresPanel,
 	}
 	if msgLine != "" {
 		parts = append(parts, "", msgLine)
@@ -246,6 +265,14 @@ func (m model) View() string {
 	parts = append(parts, "", help)
 
 	return strings.Join(parts, "\n")
+}
+
+func featureRow(name, cfgValue, enabledValue string) string {
+	cfgStr := inactiveStyle.Render("disabled")
+	if cfgValue == enabledValue {
+		cfgStr = activeStyle.Render("enabled")
+	}
+	return colNameStyle.Render(name) + cfgStr
 }
 
 // -- Commands --
@@ -284,11 +311,8 @@ func refreshCmd() tea.Cmd {
 			msg.cfgURL = cfg.Get("URL")
 			msg.cfgInsp = cfg.Get("INSPECTOR_PORT")
 			msg.cfgHTTP = cfg.Get("INSPECTOR_HTTP_PORT")
-		}
-
-		if out, err := exec.Command("systemctl", "show", vncServiceName,
-			"--property=ActiveState", "--value").Output(); err == nil {
-			msg.vncState = strings.TrimSpace(string(out))
+			msg.cfgVNC = cfg.Get("VNC_ENABLED")
+			msg.cfgCursor = cfg.Get("CURSOR_VISIBLE")
 		}
 
 		return msg
@@ -375,6 +399,35 @@ func toggleVNCCmd() tea.Cmd {
 			return actionDoneMsg{"VNC disabled"}
 		}
 		return actionDoneMsg{"VNC enabled"}
+	}
+}
+
+func toggleCursorCmd() tea.Cmd {
+	return func() tea.Msg {
+		cfg, err := config.Load(config.DefaultPath)
+		if err != nil {
+			return actionDoneMsg{"Cursor toggle failed: " + err.Error()}
+		}
+
+		current := cfg.Get("CURSOR_VISIBLE")
+		if current == "false" {
+			cfg.Set("CURSOR_VISIBLE", "true")
+		} else {
+			cfg.Set("CURSOR_VISIBLE", "false")
+		}
+
+		if err := cfg.Save(); err != nil {
+			return actionDoneMsg{"Cursor toggle failed: " + err.Error()}
+		}
+
+		if err := exec.Command("sudo", "systemctl", "restart", serviceName).Run(); err != nil {
+			return actionDoneMsg{"Cursor config saved, but service restart failed: " + err.Error()}
+		}
+
+		if current == "false" {
+			return actionDoneMsg{"Cursor enabled"}
+		}
+		return actionDoneMsg{"Cursor disabled"}
 	}
 }
 

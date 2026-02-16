@@ -8,3 +8,6 @@ INSPECTOR_HTTP_PORT="8090"
 # VNC remote access (requires service restart)
 VNC_ENABLED="false"
 VNC_PORT="5900"
+
+# Cursor visibility (requires service restart)
+CURSOR_VISIBLE="true"

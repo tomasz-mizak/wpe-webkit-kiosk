@@ -3,6 +3,7 @@
 #include <wpe/wpe-platform.h>
 #include <gio/gio.h>
 #include <stdlib.h>
+#include <string.h>
 
 static WebKitWebView *g_web_view = NULL;
 static WebKitNetworkSession *g_session = NULL;
@@ -176,9 +177,23 @@ static void activate(GApplication *app, gpointer user_data)
         "enable-webgl", TRUE,
         NULL);
 
+    WebKitUserContentManager *content_manager =
+        webkit_user_content_manager_new();
+
+    const char *cursor_visible = getenv("WPE_KIOSK_CURSOR_VISIBLE");
+    if (cursor_visible && strcmp(cursor_visible, "false") == 0) {
+        WebKitUserStyleSheet *sheet = webkit_user_style_sheet_new(
+            "* { cursor: none !important; }",
+            WEBKIT_USER_CONTENT_INJECT_ALL_FRAMES,
+            WEBKIT_USER_STYLE_LEVEL_USER, NULL, NULL);
+        webkit_user_content_manager_add_style_sheet(content_manager, sheet);
+        webkit_user_style_sheet_unref(sheet);
+    }
+
     WebKitWebView *view = WEBKIT_WEB_VIEW(g_object_new(WEBKIT_TYPE_WEB_VIEW,
         "network-session", g_session,
         "settings", settings,
+        "user-content-manager", content_manager,
         NULL));
 
     g_object_unref(settings);
