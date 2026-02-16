@@ -13,6 +13,7 @@ import (
 )
 
 const serviceName = "wpe-webkit-kiosk"
+const vncServiceName = "wpe-webkit-kiosk-vnc"
 
 // -- Styles --
 
@@ -51,12 +52,13 @@ var (
 
 type tickMsg time.Time
 type refreshMsg struct {
-	state   string
-	url     string
-	since   string
-	cfgURL  string
-	cfgInsp string
-	cfgHTTP string
+	state    string
+	url      string
+	since    string
+	cfgURL   string
+	cfgInsp  string
+	cfgHTTP  string
+	vncState string
 }
 type actionDoneMsg struct{ text string }
 
@@ -76,6 +78,7 @@ type model struct {
 	cfgURL     string
 	cfgInsp    string
 	cfgHTTP    string
+	vncState   string
 	message    string
 	mode       mode
 	input      string
@@ -105,6 +108,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cfgURL = msg.cfgURL
 		m.cfgInsp = msg.cfgInsp
 		m.cfgHTTP = msg.cfgHTTP
+		m.vncState = msg.vncState
 		return m, nil
 
 	case actionDoneMsg:
@@ -139,6 +143,9 @@ func (m model) handleNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "c":
 		m.message = "Clearing all data..."
 		return m, clearDataCmd()
+	case "v":
+		m.message = "Toggling VNC..."
+		return m, toggleVNCCmd()
 	}
 	return m, nil
 }
@@ -193,10 +200,16 @@ func (m model) View() string {
 		sinceStr = "-"
 	}
 
+	vncStr := inactiveStyle.Render("off")
+	if m.vncState == "active" {
+		vncStr = activeStyle.Render("on")
+	}
+
 	status := strings.Join([]string{
 		labelStyle.Render("Service:") + "  " + stateStr,
 		labelStyle.Render("Since:") + "  " + sinceStr,
 		labelStyle.Render("URL:") + "  " + urlStr,
+		labelStyle.Render("VNC:") + "  " + vncStr,
 	}, "\n")
 
 	cfg := strings.Join([]string{
@@ -219,7 +232,7 @@ func (m model) View() string {
 		msgLine = messageStyle.Render(m.message)
 	}
 
-	help := helpStyle.Render("[o] open URL  [r] reload  [R] restart  [c] clear data  [q] quit")
+	help := helpStyle.Render("[o] open URL  [r] reload  [R] restart  [c] clear data  [v] toggle VNC  [q] quit")
 
 	parts := []string{
 		titleStyle.Render(" WPE WebKit Kiosk "),
@@ -271,6 +284,11 @@ func refreshCmd() tea.Cmd {
 			msg.cfgURL = cfg.Get("URL")
 			msg.cfgInsp = cfg.Get("INSPECTOR_PORT")
 			msg.cfgHTTP = cfg.Get("INSPECTOR_HTTP_PORT")
+		}
+
+		if out, err := exec.Command("systemctl", "show", vncServiceName,
+			"--property=ActiveState", "--value").Output(); err == nil {
+			msg.vncState = strings.TrimSpace(string(out))
 		}
 
 		return msg
@@ -328,6 +346,35 @@ func clearDataCmd() tea.Cmd {
 			return actionDoneMsg{"Clear failed: " + err.Error()}
 		}
 		return actionDoneMsg{"All browsing data cleared"}
+	}
+}
+
+func toggleVNCCmd() tea.Cmd {
+	return func() tea.Msg {
+		cfg, err := config.Load(config.DefaultPath)
+		if err != nil {
+			return actionDoneMsg{"VNC toggle failed: " + err.Error()}
+		}
+
+		current := cfg.Get("VNC_ENABLED")
+		if current == "true" {
+			cfg.Set("VNC_ENABLED", "false")
+		} else {
+			cfg.Set("VNC_ENABLED", "true")
+		}
+
+		if err := cfg.Save(); err != nil {
+			return actionDoneMsg{"VNC toggle failed: " + err.Error()}
+		}
+
+		if err := exec.Command("sudo", "systemctl", "restart", vncServiceName).Run(); err != nil {
+			return actionDoneMsg{"VNC config saved, but service restart failed: " + err.Error()}
+		}
+
+		if current == "true" {
+			return actionDoneMsg{"VNC disabled"}
+		}
+		return actionDoneMsg{"VNC enabled"}
 	}
 }
 

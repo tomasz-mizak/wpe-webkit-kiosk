@@ -2,6 +2,8 @@
 set -e
 
 if [ "$1" = "remove" ]; then
+    systemctl stop wpe-webkit-kiosk-vnc.service || true
+    systemctl disable wpe-webkit-kiosk-vnc.service || true
     systemctl stop wpe-webkit-kiosk.service || true
     systemctl disable wpe-webkit-kiosk.service || true
 fi

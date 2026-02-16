@@ -33,6 +33,9 @@ package: launcher cli
 	cp /build/debian/config $(STAGING)/etc/wpe-webkit-kiosk/
 	mkdir -p $(STAGING)/usr/lib/systemd/system
 	cp /build/debian/wpe-webkit-kiosk.service $(STAGING)/usr/lib/systemd/system/
+	cp /build/debian/wpe-webkit-kiosk-vnc.service $(STAGING)/usr/lib/systemd/system/
+	cp /build/debian/wpe-webkit-kiosk-vnc-check $(STAGING)$(PREFIX)/bin/
+	chmod +x $(STAGING)$(PREFIX)/bin/wpe-webkit-kiosk-vnc-check
 	mkdir -p $(STAGING)/usr/share/dbus-1/system.d
 	cp /build/debian/com.wpe.Kiosk.conf $(STAGING)/usr/share/dbus-1/system.d/
 	mkdir -p $(STAGING)/etc/sudoers.d
