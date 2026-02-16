@@ -23,6 +23,7 @@ var ValidKeys = map[string]bool{
 	"INSPECTOR_HTTP_PORT": true,
 	"VNC_ENABLED":         true,
 	"VNC_PORT":            true,
+	"CURSOR_VISIBLE":      true,
 }
 
 // Entry represents a single line in the config file.
