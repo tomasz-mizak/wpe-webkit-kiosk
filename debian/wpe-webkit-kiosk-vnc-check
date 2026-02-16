@@ -1,0 +1,8 @@
+#!/bin/bash
+# Exit 0 if VNC is enabled, exit 1 to prevent service start
+CONFIG=/etc/wpe-webkit-kiosk/config
+VNC_ENABLED="false"
+if [ -f "$CONFIG" ]; then
+    . "$CONFIG"
+fi
+[ "$VNC_ENABLED" = "true" ]

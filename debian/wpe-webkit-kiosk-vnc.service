@@ -1,0 +1,17 @@
+[Unit]
+Description=WayVNC Remote Access for Kiosk
+After=wpe-webkit-kiosk.service
+BindsTo=wpe-webkit-kiosk.service
+
+[Service]
+Type=simple
+ExecStartPre=/opt/wpe-webkit-kiosk/bin/wpe-webkit-kiosk-vnc-check
+ExecStart=/usr/bin/wayvnc 0.0.0.0 5900
+Restart=on-failure
+RestartSec=3
+Environment=WAYLAND_DISPLAY=wayland-0
+Environment=XDG_RUNTIME_DIR=/run/user/0
+Environment=HOME=/root
+
+[Install]
+WantedBy=graphical.target
