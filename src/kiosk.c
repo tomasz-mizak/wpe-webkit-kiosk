@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/statvfs.h>
+#include <unistd.h>
 
 static WebKitWebView *g_web_view = NULL;
 static WebKitNetworkSession *g_session = NULL;
@@ -228,41 +230,254 @@ static gchar *build_extensions_json(void)
     return g_string_free(json, FALSE);
 }
 
+static void append_json_comma(GString *json)
+{
+    if (json->len > 1 && json->str[json->len - 1] != '{')
+        g_string_append_c(json, ',');
+}
+
+static void read_cpu_stats(GString *json)
+{
+    gchar *stat_text = NULL;
+    if (!g_file_get_contents("/proc/stat", &stat_text, NULL, NULL))
+        return;
+    gchar *eol = strchr(stat_text, '\n');
+    if (eol) *eol = '\0';
+    gchar *escaped = g_strescape(stat_text, NULL);
+    append_json_comma(json);
+    g_string_append_printf(json, "\"cpuLine\":\"%s\"", escaped);
+    g_free(escaped);
+    g_free(stat_text);
+}
+
+static void read_memory_stats(GString *json)
+{
+    gchar *mem_text = NULL;
+    if (!g_file_get_contents("/proc/meminfo", &mem_text, NULL, NULL))
+        return;
+    long mem_total = 0, mem_available = 0, swap_total = 0, swap_free = 0;
+    gchar **lines = g_strsplit(mem_text, "\n", -1);
+    for (int i = 0; lines[i]; i++) {
+        if (g_str_has_prefix(lines[i], "MemTotal:"))
+            sscanf(lines[i], "MemTotal: %ld", &mem_total);
+        else if (g_str_has_prefix(lines[i], "MemAvailable:"))
+            sscanf(lines[i], "MemAvailable: %ld", &mem_available);
+        else if (g_str_has_prefix(lines[i], "SwapTotal:"))
+            sscanf(lines[i], "SwapTotal: %ld", &swap_total);
+        else if (g_str_has_prefix(lines[i], "SwapFree:"))
+            sscanf(lines[i], "SwapFree: %ld", &swap_free);
+    }
+    g_strfreev(lines);
+    g_free(mem_text);
+    append_json_comma(json);
+    g_string_append_printf(json,
+        "\"memTotalKB\":%ld,\"memAvailableKB\":%ld,"
+        "\"swapTotalKB\":%ld,\"swapFreeKB\":%ld",
+        mem_total, mem_available, swap_total, swap_free);
+}
+
+static void read_uptime(GString *json)
+{
+    gchar *text = NULL;
+    if (!g_file_get_contents("/proc/uptime", &text, NULL, NULL))
+        return;
+    double uptime_sec = 0;
+    sscanf(text, "%lf", &uptime_sec);
+    g_free(text);
+    append_json_comma(json);
+    g_string_append_printf(json, "\"uptimeSec\":%.1f", uptime_sec);
+}
+
+static void read_load_average(GString *json)
+{
+    gchar *text = NULL;
+    if (!g_file_get_contents("/proc/loadavg", &text, NULL, NULL))
+        return;
+    double load1 = 0, load5 = 0, load15 = 0;
+    sscanf(text, "%lf %lf %lf", &load1, &load5, &load15);
+    g_free(text);
+    append_json_comma(json);
+    g_string_append_printf(json,
+        "\"loadAvg\":[%.2f,%.2f,%.2f]", load1, load5, load15);
+}
+
+static void read_temperature(GString *json)
+{
+    append_json_comma(json);
+    g_string_append(json, "\"temperatures\":[");
+    gboolean first = TRUE;
+
+    GDir *dir = g_dir_open("/sys/class/thermal", 0, NULL);
+    if (!dir) {
+        g_string_append_c(json, ']');
+        return;
+    }
+
+    const gchar *entry;
+    while ((entry = g_dir_read_name(dir)) != NULL) {
+        if (!g_str_has_prefix(entry, "thermal_zone"))
+            continue;
+
+        gchar *temp_path = g_build_filename("/sys/class/thermal", entry, "temp", NULL);
+        gchar *type_path = g_build_filename("/sys/class/thermal", entry, "type", NULL);
+        gchar *temp_text = NULL, *type_text = NULL;
+
+        if (g_file_get_contents(temp_path, &temp_text, NULL, NULL)) {
+            long millideg = atol(temp_text);
+            g_file_get_contents(type_path, &type_text, NULL, NULL);
+            if (type_text) g_strstrip(type_text);
+
+            if (!first) g_string_append_c(json, ',');
+            g_string_append_printf(json, "{\"zone\":\"%s\",\"type\":\"%s\",\"tempC\":%.1f}",
+                                   entry,
+                                   type_text ? type_text : "unknown",
+                                   millideg / 1000.0);
+            first = FALSE;
+        }
+
+        g_free(temp_path);
+        g_free(type_path);
+        g_free(temp_text);
+        g_free(type_text);
+    }
+    g_dir_close(dir);
+    g_string_append_c(json, ']');
+}
+
+static void read_network_stats(GString *json)
+{
+    gchar *text = NULL;
+    if (!g_file_get_contents("/proc/net/dev", &text, NULL, NULL))
+        return;
+
+    append_json_comma(json);
+    g_string_append(json, "\"network\":[");
+    gboolean first = TRUE;
+
+    gchar **lines = g_strsplit(text, "\n", -1);
+    /* Skip first 2 header lines */
+    for (int i = 2; lines[i] && lines[i][0]; i++) {
+        gchar *line = g_strstrip(lines[i]);
+        gchar *colon = strchr(line, ':');
+        if (!colon) continue;
+
+        *colon = '\0';
+        gchar *iface = g_strstrip(line);
+        gchar *rest = colon + 1;
+
+        /* Skip loopback */
+        if (g_strcmp0(iface, "lo") == 0) continue;
+
+        long long rx_bytes = 0, tx_bytes = 0;
+        long long rx_packets = 0, tx_packets = 0;
+        long long dummy;
+        sscanf(rest, "%lld %lld %lld %lld %lld %lld %lld %lld %lld %lld",
+               &rx_bytes, &rx_packets, &dummy, &dummy, &dummy, &dummy, &dummy, &dummy,
+               &tx_bytes, &tx_packets);
+
+        if (!first) g_string_append_c(json, ',');
+        gchar *esc_iface = g_strescape(iface, NULL);
+        g_string_append_printf(json,
+            "{\"iface\":\"%s\",\"rxBytes\":%lld,\"txBytes\":%lld,"
+            "\"rxPackets\":%lld,\"txPackets\":%lld}",
+            esc_iface, rx_bytes, tx_bytes, rx_packets, tx_packets);
+        g_free(esc_iface);
+        first = FALSE;
+    }
+    g_strfreev(lines);
+    g_free(text);
+    g_string_append_c(json, ']');
+}
+
+static void read_disk_stats(GString *json)
+{
+    const gchar *mount_points[] = {"/", "/tmp", NULL};
+
+    append_json_comma(json);
+    g_string_append(json, "\"disk\":[");
+    gboolean first = TRUE;
+
+    for (int i = 0; mount_points[i]; i++) {
+        struct statvfs st;
+        if (statvfs(mount_points[i], &st) != 0) continue;
+
+        unsigned long long total = (unsigned long long)st.f_blocks * st.f_frsize;
+        unsigned long long avail = (unsigned long long)st.f_bavail * st.f_frsize;
+
+        if (!first) g_string_append_c(json, ',');
+        g_string_append_printf(json,
+            "{\"mount\":\"%s\",\"totalBytes\":%llu,\"availBytes\":%llu}",
+            mount_points[i], total, avail);
+        first = FALSE;
+    }
+    g_string_append_c(json, ']');
+}
+
+static void read_gpu_freq(GString *json)
+{
+    append_json_comma(json);
+    g_string_append(json, "\"gpu\":{");
+    gboolean has_data = FALSE;
+
+    /* Intel GPU frequency */
+    gchar *freq_text = NULL;
+    if (g_file_get_contents("/sys/class/drm/card0/gt_cur_freq_mhz", &freq_text, NULL, NULL)) {
+        g_strstrip(freq_text);
+        g_string_append_printf(json, "\"freqMHz\":%s", freq_text);
+        g_free(freq_text);
+        has_data = TRUE;
+    }
+
+    gchar *max_text = NULL;
+    if (g_file_get_contents("/sys/class/drm/card0/gt_max_freq_mhz", &max_text, NULL, NULL)) {
+        g_strstrip(max_text);
+        if (has_data) g_string_append_c(json, ',');
+        g_string_append_printf(json, "\"maxFreqMHz\":%s", max_text);
+        g_free(max_text);
+    }
+
+    g_string_append_c(json, '}');
+}
+
+static void read_process_stats(GString *json)
+{
+    gchar *status_text = NULL;
+    if (!g_file_get_contents("/proc/self/status", &status_text, NULL, NULL))
+        return;
+
+    long vm_rss = 0, vm_size = 0, threads = 0;
+    gchar **lines = g_strsplit(status_text, "\n", -1);
+    for (int i = 0; lines[i]; i++) {
+        if (g_str_has_prefix(lines[i], "VmRSS:"))
+            sscanf(lines[i], "VmRSS: %ld", &vm_rss);
+        else if (g_str_has_prefix(lines[i], "VmSize:"))
+            sscanf(lines[i], "VmSize: %ld", &vm_size);
+        else if (g_str_has_prefix(lines[i], "Threads:"))
+            sscanf(lines[i], "Threads: %ld", &threads);
+    }
+    g_strfreev(lines);
+    g_free(status_text);
+
+    append_json_comma(json);
+    g_string_append_printf(json,
+        "\"process\":{\"vmRssKB\":%ld,\"vmSizeKB\":%ld,\"threads\":%ld,\"pid\":%d}",
+        vm_rss, vm_size, threads, getpid());
+}
+
 static gchar *read_system_stats(void)
 {
     GString *json = g_string_new("{");
 
-    /* CPU: first line of /proc/stat */
-    gchar *stat_text = NULL;
-    if (g_file_get_contents("/proc/stat", &stat_text, NULL, NULL)) {
-        gchar *eol = strchr(stat_text, '\n');
-        if (eol) *eol = '\0';
-        gchar *escaped = g_strescape(stat_text, NULL);
-        g_string_append_printf(json, "\"cpuLine\":\"%s\",", escaped);
-        g_free(escaped);
-        g_free(stat_text);
-    }
+    read_cpu_stats(json);
+    read_memory_stats(json);
+    read_uptime(json);
+    read_load_average(json);
+    read_temperature(json);
+    read_network_stats(json);
+    read_disk_stats(json);
+    read_gpu_freq(json);
+    read_process_stats(json);
 
-    /* Memory from /proc/meminfo */
-    gchar *mem_text = NULL;
-    if (g_file_get_contents("/proc/meminfo", &mem_text, NULL, NULL)) {
-        long mem_total = 0, mem_available = 0;
-        gchar **lines = g_strsplit(mem_text, "\n", -1);
-        for (int i = 0; lines[i]; i++) {
-            if (g_str_has_prefix(lines[i], "MemTotal:"))
-                sscanf(lines[i], "MemTotal: %ld", &mem_total);
-            else if (g_str_has_prefix(lines[i], "MemAvailable:"))
-                sscanf(lines[i], "MemAvailable: %ld", &mem_available);
-        }
-        g_strfreev(lines);
-        g_free(mem_text);
-        g_string_append_printf(json, "\"memTotalKB\":%ld,\"memAvailableKB\":%ld,",
-                               mem_total, mem_available);
-    }
-
-    /* Remove trailing comma */
-    if (json->str[json->len - 1] == ',')
-        g_string_truncate(json, json->len - 1);
     g_string_append_c(json, '}');
     return g_string_free(json, FALSE);
 }
@@ -297,9 +512,30 @@ static gboolean on_script_message(WebKitUserContentManager *manager,
 
     if (g_strcmp0(type, "getStats") == 0) {
         gchar *stats = read_system_stats();
-        JSCValue *result = jsc_value_new_string(ctx, stats);
+
+        /* Inject WebKit page info (needs g_web_view access) */
+        GString *full = g_string_new(stats);
+        /* Replace closing brace with webkit data */
+        g_string_truncate(full, full->len - 1); /* remove '}' */
+        if (g_web_view) {
+            const gchar *uri = webkit_web_view_get_uri(g_web_view);
+            const gchar *title = webkit_web_view_get_title(g_web_view);
+            gdouble progress = webkit_web_view_get_estimated_load_progress(g_web_view);
+            gchar *esc_uri = uri ? g_strescape(uri, NULL) : g_strdup("");
+            gchar *esc_title = title ? g_strescape(title, NULL) : g_strdup("");
+            g_string_append_printf(full,
+                ",\"webkit\":{\"uri\":\"%s\",\"title\":\"%s\",\"loadProgress\":%.2f}",
+                esc_uri, esc_title, progress);
+            g_free(esc_uri);
+            g_free(esc_title);
+        }
+        g_string_append_c(full, '}');
+
+        gchar *result_str = g_string_free(full, FALSE);
+        JSCValue *result = jsc_value_new_string(ctx, result_str);
         webkit_script_message_reply_return_value(reply, result);
         g_object_unref(result);
+        g_free(result_str);
         g_free(stats);
     } else {
         g_message("Extension message: %s", str);
