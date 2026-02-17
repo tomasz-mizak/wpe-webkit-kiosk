@@ -5,3 +5,5 @@
 - cursor on screen centre, how to disable this?
 - http server to remote manage wpe-webkit-kiosk, like refresh, change url etc... all what is included in golang CLI
 - dedicated user to wpe-webkit-kiosk?
+- problem z tym ze jezeli uzywasz cli na kiosku to uruchamia sie po restarcie na innym TTY
+- readm jest nieaktualne
