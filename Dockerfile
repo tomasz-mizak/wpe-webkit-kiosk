@@ -28,7 +28,7 @@ RUN make download && make /build/src/.stamp-libwpe && make /build/src/.stamp-web
 # --- Final image: compile launcher + CLI + package (rebuilds on src/debian changes) ---
 FROM webkit
 
-RUN apt-get update && apt-get install -y golang-go \
+RUN apt-get update && apt-get install -y golang-go libjson-glib-dev \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build

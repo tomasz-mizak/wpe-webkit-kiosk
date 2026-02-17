@@ -16,7 +16,7 @@ all: launcher cli package
 
 launcher:
 	gcc -O2 -Wall -Wextra -o $(STAGING)$(PREFIX)/bin/wpe-webkit-kiosk-bin /build/src/app/kiosk.c \
-		$$(pkg-config --cflags --libs wpe-webkit-2.0 wpe-platform-2.0)
+		$$(pkg-config --cflags --libs wpe-webkit-2.0 wpe-platform-2.0 json-glib-1.0)
 
 # ---------- kiosk CLI ----------
 
@@ -41,6 +41,8 @@ package: launcher cli
 	mkdir -p $(STAGING)/etc/sudoers.d
 	cp /build/debian/sudoers $(STAGING)/etc/sudoers.d/wpe-webkit-kiosk
 	chmod 440 $(STAGING)/etc/sudoers.d/wpe-webkit-kiosk
+	mkdir -p $(STAGING)$(PREFIX)/extensions
+	if [ -d /build/extensions ]; then cp -r /build/extensions/* $(STAGING)$(PREFIX)/extensions/; fi
 	mkdir -p $(STAGING)/DEBIAN
 	cp /build/debian/control $(STAGING)/DEBIAN/
 	cp /build/debian/postinst $(STAGING)/DEBIAN/

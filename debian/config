@@ -11,3 +11,6 @@ VNC_PORT="5900"
 
 # Cursor visibility (requires service restart)
 CURSOR_VISIBLE="true"
+
+# Extensions directory (requires service restart)
+EXTENSIONS_DIR="/opt/wpe-webkit-kiosk/extensions"

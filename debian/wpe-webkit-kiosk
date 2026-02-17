@@ -10,6 +10,7 @@ URL="https://wpewebkit.org"
 INSPECTOR_PORT="8080"
 INSPECTOR_HTTP_PORT="8090"
 CURSOR_VISIBLE="true"
+EXTENSIONS_DIR="/opt/wpe-webkit-kiosk/extensions"
 
 # Read config
 if [ -f "$CONFIG" ]; then
@@ -31,5 +32,8 @@ export WEBKIT_INSPECTOR_HTTP_SERVER="0.0.0.0:${INSPECTOR_HTTP_PORT}"
 
 # Cursor visibility
 export WPE_KIOSK_CURSOR_VISIBLE="${CURSOR_VISIBLE}"
+
+# Extensions
+export WPE_KIOSK_EXTENSIONS_DIR="${EXTENSIONS_DIR}"
 
 exec "${PREFIX}/bin/wpe-webkit-kiosk-bin" "$URL"

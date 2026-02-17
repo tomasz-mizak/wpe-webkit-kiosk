@@ -1,0 +1,50 @@
+#__kiosk-perf {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font-family: monospace;
+  font-size: 13px;
+  line-height: 1.4;
+  padding: 8px 12px;
+  border-radius: 6px;
+  pointer-events: auto;
+  z-index: 2147483647;
+  min-width: 140px;
+  user-select: none;
+}
+
+#__kiosk-perf .perf-label {
+  color: #999;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+#__kiosk-perf .perf-value {
+  font-size: 16px;
+  font-weight: bold;
+}
+
+#__kiosk-perf .perf-bar {
+  height: 4px;
+  background: #333;
+  border-radius: 2px;
+  margin-top: 2px;
+  overflow: hidden;
+}
+
+#__kiosk-perf .perf-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+#__kiosk-perf .perf-section {
+  margin-bottom: 6px;
+}
+
+#__kiosk-perf .perf-section:last-child {
+  margin-bottom: 0;
+}
