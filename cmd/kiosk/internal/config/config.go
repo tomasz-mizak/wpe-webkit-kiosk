@@ -17,6 +17,10 @@ var LiveKeys = map[string]bool{
 }
 
 // ValidKeys is the set of recognized configuration keys.
+// DefaultExtensionsDir is the default path where extensions are stored.
+const DefaultExtensionsDir = "/opt/wpe-webkit-kiosk/extensions"
+
+// ValidKeys is the set of recognized configuration keys.
 var ValidKeys = map[string]bool{
 	"URL":                 true,
 	"INSPECTOR_PORT":      true,
@@ -24,6 +28,7 @@ var ValidKeys = map[string]bool{
 	"VNC_ENABLED":         true,
 	"VNC_PORT":            true,
 	"CURSOR_VISIBLE":      true,
+	"EXTENSIONS_DIR":      true,
 }
 
 // Entry represents a single line in the config file.

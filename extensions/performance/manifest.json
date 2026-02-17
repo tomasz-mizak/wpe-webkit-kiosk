@@ -1,0 +1,7 @@
+{
+  "name": "Performance",
+  "version": "1.0.0",
+  "description": "CPU usage and FPS counter overlay for diagnostics",
+  "scripts": ["performance.js"],
+  "styles": ["performance.css"]
+}

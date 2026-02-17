@@ -1,0 +1,78 @@
+#__kiosk-perf {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  background: rgba(0, 0, 0, 0.82);
+  color: #fff;
+  font-family: 'Consolas', 'SF Mono', monospace;
+  font-size: 12px;
+  line-height: 1.35;
+  padding: 10px 14px;
+  border-radius: 8px;
+  pointer-events: auto;
+  z-index: 2147483647;
+  min-width: 200px;
+  max-width: 320px;
+  max-height: 90vh;
+  overflow-y: auto;
+  user-select: none;
+  backdrop-filter: blur(4px);
+}
+
+#__kiosk-perf .perf-group {
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#__kiosk-perf .perf-group:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+#__kiosk-perf .perf-group-title {
+  color: #8ab4f8;
+  font-size: 10px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 4px;
+}
+
+#__kiosk-perf .perf-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2px;
+}
+
+#__kiosk-perf .perf-label {
+  color: #aaa;
+  font-size: 11px;
+}
+
+#__kiosk-perf .perf-value {
+  font-size: 12px;
+  font-weight: bold;
+  text-align: right;
+}
+
+#__kiosk-perf .perf-bar {
+  height: 3px;
+  background: #333;
+  border-radius: 2px;
+  margin-top: 2px;
+  overflow: hidden;
+}
+
+#__kiosk-perf .perf-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+#__kiosk-perf .perf-good { color: #4caf50; }
+#__kiosk-perf .perf-warn { color: #ff9800; }
+#__kiosk-perf .perf-bad  { color: #f44336; }
+#__kiosk-perf .perf-muted { color: #777; font-size: 10px; }
