@@ -1,7 +1,10 @@
 package tui
 
 import (
+	"encoding/json"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -57,6 +60,55 @@ var (
 			Padding(1, 2)
 )
 
+// -- Extension info --
+
+type extInfo struct {
+	dirName string
+	name    string
+	version string
+	enabled bool
+}
+
+func scanExtensions() []extInfo {
+	dir := config.DefaultExtensionsDir
+	if cfg, err := config.Load(config.DefaultPath); err == nil {
+		if d := cfg.Get("EXTENSIONS_DIR"); d != "" {
+			dir = d
+		}
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+
+	var exts []extInfo
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, entry.Name(), "manifest.json"))
+		if err != nil {
+			continue
+		}
+		var m struct {
+			Name    string `json:"name"`
+			Version string `json:"version"`
+		}
+		if json.Unmarshal(data, &m) != nil || m.Name == "" {
+			continue
+		}
+		_, disErr := os.Stat(filepath.Join(dir, entry.Name(), ".disabled"))
+		exts = append(exts, extInfo{
+			dirName: entry.Name(),
+			name:    m.Name,
+			version: m.Version,
+			enabled: os.IsNotExist(disErr),
+		})
+	}
+	return exts
+}
+
 // -- Messages --
 
 type tickMsg time.Time
@@ -69,6 +121,7 @@ type refreshMsg struct {
 	cfgHTTP   string
 	cfgVNC    string
 	cfgCursor string
+	exts      []extInfo
 }
 type actionDoneMsg struct{ text string }
 
@@ -79,6 +132,7 @@ type mode int
 const (
 	modeNormal mode = iota
 	modeInput
+	modeExtensions
 )
 
 type model struct {
@@ -90,6 +144,8 @@ type model struct {
 	cfgHTTP   string
 	cfgVNC    string
 	cfgCursor string
+	exts      []extInfo
+	extCursor int
 	message   string
 	mode       mode
 	input      string
@@ -121,6 +177,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cfgHTTP = msg.cfgHTTP
 		m.cfgVNC = msg.cfgVNC
 		m.cfgCursor = msg.cfgCursor
+		m.exts = msg.exts
+		if m.extCursor >= len(m.exts) {
+			m.extCursor = 0
+		}
 		return m, nil
 
 	case actionDoneMsg:
@@ -128,10 +188,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, refreshCmd()
 
 	case tea.KeyMsg:
-		if m.mode == modeInput {
+		switch m.mode {
+		case modeInput:
 			return m.handleInput(msg)
+		case modeExtensions:
+			return m.handleExtensions(msg)
+		default:
+			return m.handleNormal(msg)
 		}
-		return m.handleNormal(msg)
 	}
 	return m, nil
 }
@@ -161,6 +225,41 @@ func (m model) handleNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "m":
 		m.message = "Toggling cursor..."
 		return m, toggleCursorCmd()
+	case "e":
+		if len(m.exts) == 0 {
+			m.message = "No extensions found"
+			return m, nil
+		}
+		m.mode = modeExtensions
+		m.message = ""
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m model) handleExtensions(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "e", "q":
+		m.mode = modeNormal
+		m.message = ""
+		return m, nil
+	case "up", "k":
+		if m.extCursor > 0 {
+			m.extCursor--
+		}
+		return m, nil
+	case "down", "j":
+		if m.extCursor < len(m.exts)-1 {
+			m.extCursor++
+		}
+		return m, nil
+	case "enter", " ":
+		if m.extCursor < len(m.exts) {
+			ext := m.exts[m.extCursor]
+			m.message = "Toggling " + ext.name + "..."
+			return m, toggleExtensionCmd(ext)
+		}
+		return m, nil
 	}
 	return m, nil
 }
@@ -243,6 +342,32 @@ func (m model) View() string {
 			featureRow("Cursor", m.cfgCursor, "true"),
 	)
 
+	var extRows []string
+	if len(m.exts) == 0 {
+		extRows = append(extRows, helpStyle.Render("  No extensions found"))
+	} else {
+		for i, ext := range m.exts {
+			status := inactiveStyle.Render("disabled")
+			if ext.enabled {
+				status = activeStyle.Render("enabled")
+			}
+			prefix := "  "
+			if m.mode == modeExtensions && i == m.extCursor {
+				prefix = "> "
+			}
+			extRows = append(extRows,
+				prefix+colNameStyle.Render(ext.dirName)+status+
+					helpStyle.Render("  v"+ext.version))
+		}
+	}
+	extTitle := panelHeader.Render("Extensions")
+	if m.mode == modeExtensions {
+		extTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("220")).Render("Extensions (select)")
+	}
+	extensionsPanel := panelStyle.Render(
+		extTitle + "\n\n" + strings.Join(extRows, "\n"),
+	)
+
 	var msgLine string
 	if m.mode == modeInput {
 		msgLine = messageStyle.Render(m.message+" ") + m.input + "_"
@@ -250,7 +375,12 @@ func (m model) View() string {
 		msgLine = messageStyle.Render(m.message)
 	}
 
-	help := helpStyle.Render("[o] open URL  [r] reload  [R] restart  [c] clear data  [v] toggle VNC  [m] toggle cursor  [q] quit")
+	var help string
+	if m.mode == modeExtensions {
+		help = helpStyle.Render("[↑/↓] select  [enter] toggle  [esc] back")
+	} else {
+		help = helpStyle.Render("[o] open URL  [r] reload  [R] restart  [c] clear data  [v] VNC  [m] cursor  [e] extensions  [q] quit")
+	}
 
 	parts := []string{
 		titleStyle.Render(" WPE WebKit Kiosk "),
@@ -258,6 +388,7 @@ func (m model) View() string {
 		statusPanel,
 		configPanel,
 		featuresPanel,
+		extensionsPanel,
 	}
 	if msgLine != "" {
 		parts = append(parts, "", msgLine)
@@ -314,6 +445,8 @@ func refreshCmd() tea.Cmd {
 			msg.cfgVNC = cfg.Get("VNC_ENABLED")
 			msg.cfgCursor = cfg.Get("CURSOR_VISIBLE")
 		}
+
+		msg.exts = scanExtensions()
 
 		return msg
 	}
@@ -428,6 +561,43 @@ func toggleCursorCmd() tea.Cmd {
 			return actionDoneMsg{"Cursor enabled"}
 		}
 		return actionDoneMsg{"Cursor disabled"}
+	}
+}
+
+func toggleExtensionCmd(ext extInfo) tea.Cmd {
+	return func() tea.Msg {
+		dir := config.DefaultExtensionsDir
+		if cfg, err := config.Load(config.DefaultPath); err == nil {
+			if d := cfg.Get("EXTENSIONS_DIR"); d != "" {
+				dir = d
+			}
+		}
+
+		disabledPath := filepath.Join(dir, ext.dirName, ".disabled")
+
+		var err error
+		if ext.enabled {
+			err = exec.Command("sudo", "/usr/bin/touch", disabledPath).Run()
+		} else {
+			err = exec.Command("sudo", "/usr/bin/rm", disabledPath).Run()
+		}
+		if err != nil {
+			action := "enable"
+			if ext.enabled {
+				action = "disable"
+			}
+			return actionDoneMsg{"Failed to " + action + " " + ext.name + ": " + err.Error()}
+		}
+
+		action := "enabled"
+		if ext.enabled {
+			action = "disabled"
+		}
+
+		if err := exec.Command("sudo", "/usr/bin/systemctl", "restart", serviceName).Run(); err != nil {
+			return actionDoneMsg{ext.name + " " + action + ", but restart failed: " + err.Error()}
+		}
+		return actionDoneMsg{ext.name + " " + action + " (service restarted)"}
 	}
 }
 
