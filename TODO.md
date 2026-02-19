@@ -1,9 +1,6 @@
-- How to create overlayer addon? for example, simple CPU chart on the right side, for developer purposes
 - semantic versioning + pipeline building artifact and releasing when tag was commited
-- license MIT
 - Logging system: capture console logs (log/warn/error): WebKit C API signals for basic logs to journald
-- cursor on screen centre, how to disable this?
 - http server to remote manage wpe-webkit-kiosk, like refresh, change url etc... all what is included in golang CLI
 - dedicated user to wpe-webkit-kiosk?
-- problem z tym ze jezeli uzywasz cli na kiosku to uruchamia sie po restarcie na innym TTY
-- readm jest nieaktualne
+- readme update
+- addon to track network and console from devtools

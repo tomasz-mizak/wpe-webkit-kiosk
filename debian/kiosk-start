@@ -1,0 +1,26 @@
+#!/bin/bash
+# Cage launcher — reads TTY config and starts cage on the configured VT
+set -euo pipefail
+
+CONFIG=/etc/wpe-webkit-kiosk/config
+
+# Default TTY
+TTY="1"
+
+# Read config (sources all variables including TTY)
+if [ -f "$CONFIG" ]; then
+    # shellcheck source=/dev/null
+    . "$CONFIG"
+fi
+
+# Use libseat builtin backend for direct VT control.
+# The builtin backend checks the currently active VT (set by chvt)
+# and uses it, instead of seatd which always picks a random free VT.
+export LIBSEAT_BACKEND=builtin
+
+# Switch to the configured VT — builtin backend will detect this as the active VT
+if [ -n "$TTY" ]; then
+    chvt "$TTY"
+fi
+
+exec /usr/bin/cage -s -- /opt/wpe-webkit-kiosk/bin/wpe-webkit-kiosk

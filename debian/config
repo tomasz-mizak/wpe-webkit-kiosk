@@ -14,3 +14,6 @@ CURSOR_VISIBLE="true"
 
 # Extensions directory (requires service restart)
 EXTENSIONS_DIR="/opt/wpe-webkit-kiosk/extensions"
+
+# TTY/VT number for kiosk display (1-12, requires service restart)
+TTY="1"

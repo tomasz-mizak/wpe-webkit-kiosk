@@ -121,6 +121,7 @@ type refreshMsg struct {
 	cfgHTTP   string
 	cfgVNC    string
 	cfgCursor string
+	cfgTTY    string
 	exts      []extInfo
 }
 type actionDoneMsg struct{ text string }
@@ -132,6 +133,7 @@ type mode int
 const (
 	modeNormal mode = iota
 	modeInput
+	modeInputTTY
 	modeExtensions
 )
 
@@ -144,6 +146,7 @@ type model struct {
 	cfgHTTP   string
 	cfgVNC    string
 	cfgCursor string
+	cfgTTY    string
 	exts      []extInfo
 	extCursor int
 	message   string
@@ -177,6 +180,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cfgHTTP = msg.cfgHTTP
 		m.cfgVNC = msg.cfgVNC
 		m.cfgCursor = msg.cfgCursor
+		m.cfgTTY = msg.cfgTTY
 		m.exts = msg.exts
 		if m.extCursor >= len(m.exts) {
 			m.extCursor = 0
@@ -189,7 +193,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		switch m.mode {
-		case modeInput:
+		case modeInput, modeInputTTY:
 			return m.handleInput(msg)
 		case modeExtensions:
 			return m.handleExtensions(msg)
@@ -225,6 +229,11 @@ func (m model) handleNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "m":
 		m.message = "Toggling cursor..."
 		return m, toggleCursorCmd()
+	case "t":
+		m.mode = modeInputTTY
+		m.input = ""
+		m.message = "Enter TTY number (1-12):"
+		return m, nil
 	case "e":
 		if len(m.exts) == 0 {
 			m.message = "No extensions found"
@@ -267,15 +276,20 @@ func (m model) handleExtensions(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m model) handleInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
-		url := m.input
+		inputMode := m.mode
+		value := m.input
 		m.mode = modeNormal
 		m.input = ""
-		if url == "" {
+		if value == "" {
 			m.message = ""
 			return m, nil
 		}
-		m.message = "Opening " + url + "..."
-		return m, openCmd(url)
+		if inputMode == modeInputTTY {
+			m.message = "Setting TTY to " + value + "..."
+			return m, setTTYCmd(value)
+		}
+		m.message = "Opening " + value + "..."
+		return m, openCmd(value)
 	case "esc":
 		m.mode = modeNormal
 		m.input = ""
@@ -339,7 +353,8 @@ func (m model) View() string {
 		panelHeader.Render("Features") + "\n\n" +
 			colHeaderStyle.Render("Name") + colHeaderStyle.Render("Config") + "\n" +
 			featureRow("VNC", m.cfgVNC, "true") + "\n" +
-			featureRow("Cursor", m.cfgCursor, "true"),
+			featureRow("Cursor", m.cfgCursor, "true") + "\n" +
+			colNameStyle.Render("TTY") + helpStyle.Render(m.cfgTTY),
 	)
 
 	var extRows []string
@@ -379,7 +394,7 @@ func (m model) View() string {
 	if m.mode == modeExtensions {
 		help = helpStyle.Render("[↑/↓] select  [enter] toggle  [esc] back")
 	} else {
-		help = helpStyle.Render("[o] open URL  [r] reload  [R] restart  [c] clear data  [v] VNC  [m] cursor  [e] extensions  [q] quit")
+		help = helpStyle.Render("[o] open URL  [r] reload  [R] restart  [c] clear data  [v] VNC  [m] cursor  [t] TTY  [e] extensions  [q] quit")
 	}
 
 	parts := []string{
@@ -444,6 +459,7 @@ func refreshCmd() tea.Cmd {
 			msg.cfgHTTP = cfg.Get("INSPECTOR_HTTP_PORT")
 			msg.cfgVNC = cfg.Get("VNC_ENABLED")
 			msg.cfgCursor = cfg.Get("CURSOR_VISIBLE")
+			msg.cfgTTY = cfg.Get("TTY")
 		}
 
 		msg.exts = scanExtensions()
@@ -561,6 +577,36 @@ func toggleCursorCmd() tea.Cmd {
 			return actionDoneMsg{"Cursor enabled"}
 		}
 		return actionDoneMsg{"Cursor disabled"}
+	}
+}
+
+func setTTYCmd(value string) tea.Cmd {
+	return func() tea.Msg {
+		n := 0
+		for _, c := range value {
+			if c < '0' || c > '9' {
+				return actionDoneMsg{"Invalid TTY number: " + value}
+			}
+			n = n*10 + int(c-'0')
+		}
+		if n < 1 || n > 12 {
+			return actionDoneMsg{"TTY must be between 1 and 12"}
+		}
+
+		cfg, err := config.Load(config.DefaultPath)
+		if err != nil {
+			return actionDoneMsg{"TTY set failed: " + err.Error()}
+		}
+
+		cfg.Set("TTY", value)
+		if err := cfg.Save(); err != nil {
+			return actionDoneMsg{"TTY set failed: " + err.Error()}
+		}
+
+		if err := exec.Command("sudo", "systemctl", "restart", serviceName).Run(); err != nil {
+			return actionDoneMsg{"TTY set to " + value + ", but service restart failed: " + err.Error()}
+		}
+		return actionDoneMsg{"TTY set to " + value + " (service restarted)"}
 	}
 }
 
