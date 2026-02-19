@@ -1,6 +1,7 @@
 openspec/
 AGENTS.md
 CLAUDE.md
+.claude/
 
 # build artifacts
 output/
