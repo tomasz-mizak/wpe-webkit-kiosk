@@ -1,13 +1,13 @@
 [Unit]
 Description=WPE WebKit Kiosk Browser
-Requires=seatd.service
+Wants=seatd.service
 After=seatd.service network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 ExecStartPre=/bin/mkdir -p /run/user/0
-ExecStart=/usr/bin/cage -s -- /opt/wpe-webkit-kiosk/bin/wpe-webkit-kiosk
+ExecStart=/opt/wpe-webkit-kiosk/bin/kiosk-start
 Restart=always
 RestartSec=3
 Environment=XDG_RUNTIME_DIR=/run/user/0

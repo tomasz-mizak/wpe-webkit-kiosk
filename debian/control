@@ -15,4 +15,4 @@ Depends: libegl1, libepoxy0, libglib2.0-0, libgstreamer1.0-0,
  libwayland-server0, libwebp7, libxml2, libxslt1.1, libcairo2,
  libfontconfig1, libfreetype6, libgbm1, libgcrypt20, libxkbcommon0,
  libatk1.0-0, libatk-bridge2.0-0, libsystemd0, libwoff1, libavif16,
- libdrm2, libinput10, cage, seatd, wayvnc
+ libdrm2, libinput10, cage, seatd, wayvnc, kbd

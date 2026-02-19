@@ -29,6 +29,8 @@ cli:
 package: launcher cli
 	cp /build/debian/wpe-webkit-kiosk $(STAGING)$(PREFIX)/bin/
 	chmod +x $(STAGING)$(PREFIX)/bin/wpe-webkit-kiosk
+	cp /build/debian/kiosk-start $(STAGING)$(PREFIX)/bin/
+	chmod +x $(STAGING)$(PREFIX)/bin/kiosk-start
 	mkdir -p $(STAGING)/etc/wpe-webkit-kiosk
 	cp /build/debian/config $(STAGING)/etc/wpe-webkit-kiosk/
 	mkdir -p $(STAGING)/usr/lib/systemd/system

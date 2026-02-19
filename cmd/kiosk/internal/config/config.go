@@ -29,6 +29,7 @@ var ValidKeys = map[string]bool{
 	"VNC_PORT":            true,
 	"CURSOR_VISIBLE":      true,
 	"EXTENSIONS_DIR":      true,
+	"TTY":                 true,
 }
 
 // Entry represents a single line in the config file.
