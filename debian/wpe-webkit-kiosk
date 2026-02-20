@@ -43,4 +43,29 @@ export WPE_KIOSK_CURSOR_VISIBLE="${CURSOR_VISIBLE}"
 # Extensions
 export WPE_KIOSK_EXTENSIONS_DIR="${EXTENSIONS_DIR}"
 
-exec "${PREFIX}/bin/wpe-webkit-kiosk-bin" "$URL"
+# --- Audio: D-Bus session bus ---
+if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
+    DBUS_SESSION_BUS_ADDRESS="$(dbus-daemon --session --print-address --fork)"
+    export DBUS_SESSION_BUS_ADDRESS
+fi
+
+# --- Audio: PipeWire stack ---
+pipewire &
+PIPEWIRE_PID=$!
+sleep 0.3
+
+pipewire-pulse &
+PIPEWIRE_PULSE_PID=$!
+
+wireplumber &
+WIREPLUMBER_PID=$!
+sleep 0.3
+
+# Cleanup PipeWire processes on exit
+cleanup_audio() {
+    kill "$WIREPLUMBER_PID" "$PIPEWIRE_PULSE_PID" "$PIPEWIRE_PID" 2>/dev/null || true
+    wait "$WIREPLUMBER_PID" "$PIPEWIRE_PULSE_PID" "$PIPEWIRE_PID" 2>/dev/null || true
+}
+trap cleanup_audio EXIT
+
+"${PREFIX}/bin/wpe-webkit-kiosk-bin" "$URL"
