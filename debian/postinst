@@ -2,6 +2,12 @@
 set -e
 
 if [ "$1" = "configure" ]; then
+    # Set sane ALSA defaults (unmute + 80% volume) if a sound card exists
+    if [ -d /dev/snd ]; then
+        amixer -q sset Master 80% unmute 2>/dev/null || true
+        amixer -q sset Speaker 80% unmute 2>/dev/null || true
+    fi
+
     systemctl daemon-reload
     systemctl enable wpe-webkit-kiosk.service
     systemctl enable wpe-webkit-kiosk-vnc.service

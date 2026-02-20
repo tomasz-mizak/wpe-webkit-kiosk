@@ -2,12 +2,14 @@ package tui
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/tomasz-mizak/wpe-webkit-kiosk/cmd/kiosk/internal/audio"
 	"github.com/tomasz-mizak/wpe-webkit-kiosk/cmd/kiosk/internal/config"
 	"github.com/tomasz-mizak/wpe-webkit-kiosk/cmd/kiosk/internal/dbus"
 
@@ -122,6 +124,9 @@ type refreshMsg struct {
 	cfgVNC    string
 	cfgCursor string
 	cfgTTY    string
+	volume    int
+	muted     bool
+	audioErr  bool
 	exts      []extInfo
 }
 type actionDoneMsg struct{ text string }
@@ -135,6 +140,7 @@ const (
 	modeInput
 	modeInputTTY
 	modeExtensions
+	modeVolume
 )
 
 type model struct {
@@ -147,6 +153,9 @@ type model struct {
 	cfgVNC    string
 	cfgCursor string
 	cfgTTY    string
+	volume    int
+	muted     bool
+	audioErr  bool
 	exts      []extInfo
 	extCursor int
 	message   string
@@ -181,6 +190,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cfgVNC = msg.cfgVNC
 		m.cfgCursor = msg.cfgCursor
 		m.cfgTTY = msg.cfgTTY
+		m.volume = msg.volume
+		m.muted = msg.muted
+		m.audioErr = msg.audioErr
 		m.exts = msg.exts
 		if m.extCursor >= len(m.exts) {
 			m.extCursor = 0
@@ -197,6 +209,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleInput(msg)
 		case modeExtensions:
 			return m.handleExtensions(msg)
+		case modeVolume:
+			return m.handleVolume(msg)
 		default:
 			return m.handleNormal(msg)
 		}
@@ -234,6 +248,14 @@ func (m model) handleNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.input = ""
 		m.message = "Enter TTY number (1-12):"
 		return m, nil
+	case "a":
+		if m.audioErr {
+			m.message = "No sound card detected"
+			return m, nil
+		}
+		m.mode = modeVolume
+		m.message = "Volume control (↑/↓ adjust, m mute, esc back)"
+		return m, nil
 	case "e":
 		if len(m.exts) == 0 {
 			m.message = "No extensions found"
@@ -269,6 +291,30 @@ func (m model) handleExtensions(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, toggleExtensionCmd(ext)
 		}
 		return m, nil
+	}
+	return m, nil
+}
+
+func (m model) handleVolume(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "a", "q":
+		m.mode = modeNormal
+		m.message = ""
+		return m, nil
+	case "up", "right", "+", "=":
+		newLevel := m.volume + 5
+		if newLevel > 100 {
+			newLevel = 100
+		}
+		return m, volumeSetCmd(newLevel)
+	case "down", "left", "-":
+		newLevel := m.volume - 5
+		if newLevel < 0 {
+			newLevel = 0
+		}
+		return m, volumeSetCmd(newLevel)
+	case "m":
+		return m, volumeToggleMuteCmd()
 	}
 	return m, nil
 }
@@ -349,12 +395,25 @@ func (m model) View() string {
 		panelHeader.Render("Config") + "\n\n" + cfg,
 	)
 
+	var volumeStr string
+	if m.audioErr {
+		volumeStr = helpStyle.Render("no sound card")
+	} else if m.muted {
+		volumeStr = inactiveStyle.Render(fmt.Sprintf("muted (%d%%)", m.volume))
+	} else {
+		filled := m.volume / 10
+		empty := 10 - filled
+		bar := strings.Repeat("█", filled) + strings.Repeat("░", empty)
+		volumeStr = activeStyle.Render(fmt.Sprintf("%s %d%%", bar, m.volume))
+	}
+
 	featuresPanel := panelStyle.Render(
 		panelHeader.Render("Features") + "\n\n" +
 			colHeaderStyle.Render("Name") + colHeaderStyle.Render("Config") + "\n" +
 			featureRow("VNC", m.cfgVNC, "true") + "\n" +
 			featureRow("Cursor", m.cfgCursor, "true") + "\n" +
-			colNameStyle.Render("TTY") + helpStyle.Render(m.cfgTTY),
+			colNameStyle.Render("TTY") + helpStyle.Render(m.cfgTTY) + "\n" +
+			colNameStyle.Render("Volume") + volumeStr,
 	)
 
 	var extRows []string
@@ -391,10 +450,13 @@ func (m model) View() string {
 	}
 
 	var help string
-	if m.mode == modeExtensions {
+	switch m.mode {
+	case modeExtensions:
 		help = helpStyle.Render("[↑/↓] select  [enter] toggle  [esc] back")
-	} else {
-		help = helpStyle.Render("[o] open URL  [r] reload  [R] restart  [c] clear data  [v] VNC  [m] cursor  [t] TTY  [e] extensions  [q] quit")
+	case modeVolume:
+		help = helpStyle.Render("[↑/↓] adjust  [m] mute/unmute  [esc] back")
+	default:
+		help = helpStyle.Render("[o] open URL  [r] reload  [R] restart  [c] clear data  [v] VNC  [m] cursor  [t] TTY  [a] volume  [e] extensions  [q] quit")
 	}
 
 	parts := []string{
@@ -460,6 +522,13 @@ func refreshCmd() tea.Cmd {
 			msg.cfgVNC = cfg.Get("VNC_ENABLED")
 			msg.cfgCursor = cfg.Get("CURSOR_VISIBLE")
 			msg.cfgTTY = cfg.Get("TTY")
+		}
+
+		if level, muted, err := audio.GetVolume(); err == nil {
+			msg.volume = level
+			msg.muted = muted
+		} else {
+			msg.audioErr = true
 		}
 
 		msg.exts = scanExtensions()
@@ -644,6 +713,24 @@ func toggleExtensionCmd(ext extInfo) tea.Cmd {
 			return actionDoneMsg{ext.name + " " + action + ", but restart failed: " + err.Error()}
 		}
 		return actionDoneMsg{ext.name + " " + action + " (service restarted)"}
+	}
+}
+
+func volumeSetCmd(level int) tea.Cmd {
+	return func() tea.Msg {
+		if err := audio.SetVolume(level); err != nil {
+			return actionDoneMsg{fmt.Sprintf("Volume failed: %s", err)}
+		}
+		return actionDoneMsg{fmt.Sprintf("Volume: %d%%", level)}
+	}
+}
+
+func volumeToggleMuteCmd() tea.Cmd {
+	return func() tea.Msg {
+		if err := audio.ToggleMute(); err != nil {
+			return actionDoneMsg{fmt.Sprintf("Mute toggle failed: %s", err)}
+		}
+		return actionDoneMsg{"Mute toggled"}
 	}
 }
 
