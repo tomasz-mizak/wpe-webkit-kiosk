@@ -29,18 +29,19 @@ var (
 			Background(lipgloss.Color("62")).
 			Padding(0, 1)
 
+	activeTabStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("15")).
+			Background(lipgloss.Color("62")).
+			Padding(0, 1)
+
+	inactiveTabStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("245")).
+				Padding(0, 1)
+
 	labelStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("245")).
-			Width(14)
-
-	colNameStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("245")).
-			Width(12)
-
-	colHeaderStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("245")).
-			Bold(true).
-			Width(12)
+			Width(16)
 
 	activeStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("42")).
@@ -50,17 +51,33 @@ var (
 			Foreground(lipgloss.Color("196")).
 			Bold(true)
 
+	cursorStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("220")).
+			Bold(true)
+
+	actionLabelStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("75"))
+
 	helpStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("241"))
 
 	messageStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("220"))
-
-	panelStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("62")).
-			Padding(1, 2)
 )
+
+// -- Tabs --
+
+type tab int
+
+const (
+	tabStatus tab = iota
+	tabConfig
+	tabFeatures
+	tabExtensions
+	tabCount
+)
+
+var tabNames = [tabCount]string{"Status", "Config", "Features", "Extensions"}
 
 // -- Extension info --
 
@@ -131,17 +148,17 @@ type refreshMsg struct {
 }
 type actionDoneMsg struct{ text string }
 
-// -- Model --
+// -- Mode --
 
 type mode int
 
 const (
 	modeNormal mode = iota
-	modeInput
-	modeInputTTY
-	modeExtensions
+	modeEdit
 	modeVolume
 )
+
+// -- Model --
 
 type model struct {
 	state     string
@@ -157,13 +174,32 @@ type model struct {
 	muted     bool
 	audioErr  bool
 	exts      []extInfo
-	extCursor int
-	message   string
-	mode       mode
-	input      string
-	quitting   bool
-	width      int
-	height     int
+
+	activeTab  tab
+	tabCursors [tabCount]int
+
+	mode      mode
+	editField string
+	input     string
+
+	message  string
+	quitting bool
+	width    int
+	height   int
+}
+
+func (m model) tabItemCount() int {
+	switch m.activeTab {
+	case tabStatus:
+		return 6
+	case tabConfig:
+		return 3
+	case tabFeatures:
+		return 4
+	case tabExtensions:
+		return len(m.exts)
+	}
+	return 0
 }
 
 func (m model) Init() tea.Cmd {
@@ -194,8 +230,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.muted = msg.muted
 		m.audioErr = msg.audioErr
 		m.exts = msg.exts
-		if m.extCursor >= len(m.exts) {
-			m.extCursor = 0
+		if m.tabCursors[tabExtensions] >= len(m.exts) && len(m.exts) > 0 {
+			m.tabCursors[tabExtensions] = len(m.exts) - 1
+		}
+		if len(m.exts) == 0 {
+			m.tabCursors[tabExtensions] = 0
 		}
 		return m, nil
 
@@ -204,100 +243,119 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, refreshCmd()
 
 	case tea.KeyMsg:
-		switch m.mode {
-		case modeInput, modeInputTTY:
-			return m.handleInput(msg)
-		case modeExtensions:
-			return m.handleExtensions(msg)
-		case modeVolume:
-			return m.handleVolume(msg)
-		default:
-			return m.handleNormal(msg)
+		if m.mode == modeEdit {
+			return m.handleEdit(msg)
 		}
+		if m.mode == modeVolume {
+			return m.handleVolume(msg)
+		}
+		return m.handleNormal(msg)
 	}
 	return m, nil
 }
+
+// -- Key handlers --
 
 func (m model) handleNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "ctrl+c":
 		m.quitting = true
 		return m, tea.Quit
-	case "o":
-		m.mode = modeInput
-		m.input = ""
-		m.message = "Enter URL:"
-		return m, nil
-	case "r":
-		m.message = "Reloading..."
-		return m, reloadCmd()
-	case "R":
-		m.message = "Restarting service..."
-		return m, restartCmd()
-	case "c":
-		m.message = "Clearing all data..."
-		return m, clearDataCmd()
-	case "v":
-		m.message = "Toggling VNC..."
-		return m, toggleVNCCmd()
-	case "m":
-		m.message = "Toggling cursor..."
-		return m, toggleCursorCmd()
-	case "t":
-		m.mode = modeInputTTY
-		m.input = ""
-		m.message = "Enter TTY number (1-12):"
-		return m, nil
-	case "a":
-		if m.audioErr {
-			m.message = "No sound card detected"
-			return m, nil
+
+	case "left", "h":
+		if m.activeTab == 0 {
+			m.activeTab = tabCount - 1
+		} else {
+			m.activeTab--
 		}
-		m.mode = modeVolume
-		m.message = "Volume control (↑/↓ adjust, m mute, esc back)"
 		return m, nil
-	case "e":
-		if len(m.exts) == 0 {
-			m.message = "No extensions found"
-			return m, nil
+
+	case "right", "l":
+		m.activeTab++
+		if m.activeTab >= tabCount {
+			m.activeTab = 0
 		}
-		m.mode = modeExtensions
-		m.message = ""
 		return m, nil
+
+	case "up", "k":
+		if m.tabCursors[m.activeTab] > 0 {
+			m.tabCursors[m.activeTab]--
+		}
+		return m, nil
+
+	case "down", "j":
+		max := m.tabItemCount() - 1
+		if max < 0 {
+			max = 0
+		}
+		if m.tabCursors[m.activeTab] < max {
+			m.tabCursors[m.activeTab]++
+		}
+		return m, nil
+
+	case "enter":
+		return m.handleActivate()
 	}
 	return m, nil
 }
 
-func (m model) handleExtensions(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc", "e", "q":
-		m.mode = modeNormal
-		m.message = ""
-		return m, nil
-	case "up", "k":
-		if m.extCursor > 0 {
-			m.extCursor--
+func (m model) handleActivate() (tea.Model, tea.Cmd) {
+	cursor := m.tabCursors[m.activeTab]
+	switch m.activeTab {
+	case tabStatus:
+		switch cursor {
+		case 3:
+			m.message = "Reloading..."
+			return m, reloadCmd()
+		case 4:
+			m.message = "Restarting service..."
+			return m, restartCmd()
+		case 5:
+			m.message = "Clearing all data..."
+			return m, clearDataCmd()
 		}
-		return m, nil
-	case "down", "j":
-		if m.extCursor < len(m.exts)-1 {
-			m.extCursor++
+	case tabConfig:
+		if cursor == 0 {
+			m.mode = modeEdit
+			m.editField = "url"
+			m.input = m.cfgURL
+			return m, nil
 		}
-		return m, nil
-	case "enter", " ":
-		if m.extCursor < len(m.exts) {
-			ext := m.exts[m.extCursor]
+	case tabFeatures:
+		switch cursor {
+		case 0:
+			m.message = "Toggling VNC..."
+			return m, toggleVNCCmd()
+		case 1:
+			m.message = "Toggling cursor..."
+			return m, toggleCursorCmd()
+		case 2:
+			m.mode = modeEdit
+			m.editField = "tty"
+			m.input = m.cfgTTY
+			return m, nil
+		case 3:
+			if m.audioErr {
+				m.message = "No sound card detected"
+				return m, nil
+			}
+			m.mode = modeVolume
+			m.message = "Volume: [↑/↓] adjust  [m] mute  [esc] back"
+			return m, nil
+		}
+	case tabExtensions:
+		if cursor < len(m.exts) {
+			ext := m.exts[cursor]
 			m.message = "Toggling " + ext.name + "..."
 			return m, toggleExtensionCmd(ext)
 		}
-		return m, nil
 	}
 	return m, nil
 }
 
 func (m model) handleVolume(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "esc", "a", "q":
+	case "esc", "q":
 		m.mode = modeNormal
 		m.message = ""
 		return m, nil
@@ -319,26 +377,31 @@ func (m model) handleVolume(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) handleInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m model) handleEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
-		inputMode := m.mode
 		value := m.input
+		field := m.editField
 		m.mode = modeNormal
 		m.input = ""
+		m.editField = ""
 		if value == "" {
 			m.message = ""
 			return m, nil
 		}
-		if inputMode == modeInputTTY {
+		switch field {
+		case "url":
+			m.message = "Opening " + value + "..."
+			return m, openCmd(value)
+		case "tty":
 			m.message = "Setting TTY to " + value + "..."
 			return m, setTTYCmd(value)
 		}
-		m.message = "Opening " + value + "..."
-		return m, openCmd(value)
+		return m, nil
 	case "esc":
 		m.mode = modeNormal
 		m.input = ""
+		m.editField = ""
 		m.message = ""
 		return m, nil
 	case "backspace":
@@ -354,11 +417,96 @@ func (m model) handleInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
+// -- View --
+
 func (m model) View() string {
 	if m.quitting {
 		return ""
 	}
 
+	var b strings.Builder
+
+	// Header
+	b.WriteString(titleStyle.Render(" wpe-kiosk "))
+	b.WriteString("\n\n")
+
+	// Tab bar
+	for i := tab(0); i < tabCount; i++ {
+		if i == m.activeTab {
+			b.WriteString(activeTabStyle.Render(tabNames[i]))
+		} else {
+			b.WriteString(inactiveTabStyle.Render(tabNames[i]))
+		}
+		if i < tabCount-1 {
+			b.WriteString("  ")
+		}
+	}
+	b.WriteString("\n\n")
+
+	// Tab content
+	switch m.activeTab {
+	case tabStatus:
+		m.renderStatusTab(&b)
+	case tabConfig:
+		m.renderConfigTab(&b)
+	case tabFeatures:
+		m.renderFeaturesTab(&b)
+	case tabExtensions:
+		m.renderExtensionsTab(&b)
+	}
+
+	// Status bar
+	b.WriteString("\n")
+	stateIndicator := inactiveStyle.Render("● " + m.state)
+	if m.state == "active" {
+		stateIndicator = activeStyle.Render("● " + m.state)
+	}
+	statusLine := stateIndicator
+	if m.message != "" {
+		statusLine += "  " + messageStyle.Render(m.message)
+	}
+	b.WriteString(statusLine)
+	b.WriteString("\n")
+
+	// Help bar
+	var help string
+	switch m.mode {
+	case modeEdit:
+		help = "[enter] confirm  [esc] cancel"
+	case modeVolume:
+		help = "[↑/↓] adjust  [m] mute/unmute  [esc] back"
+	default:
+		help = "[←/→] tab  [↑/↓] select  [enter] activate  [q] quit"
+	}
+	b.WriteString(helpStyle.Render(help))
+
+	return b.String()
+}
+
+func (m model) renderInfoRow(b *strings.Builder, index int, label, value string) {
+	cursor := m.tabCursors[m.activeTab]
+	if index == cursor {
+		b.WriteString(cursorStyle.Render("> "))
+	} else {
+		b.WriteString("  ")
+	}
+	b.WriteString(labelStyle.Render(label))
+	b.WriteString(value)
+	b.WriteString("\n")
+}
+
+func (m model) renderActionRow(b *strings.Builder, index int, label string) {
+	cursor := m.tabCursors[m.activeTab]
+	if index == cursor {
+		b.WriteString(cursorStyle.Render("> "))
+	} else {
+		b.WriteString("  ")
+	}
+	b.WriteString(actionLabelStyle.Render(label))
+	b.WriteString("\n")
+}
+
+func (m model) renderStatusTab(b *strings.Builder) {
 	stateStr := inactiveStyle.Render(m.state)
 	if m.state == "active" {
 		stateStr = activeStyle.Render(m.state)
@@ -368,32 +516,45 @@ func (m model) View() string {
 	if urlStr == "" {
 		urlStr = "-"
 	}
-
 	sinceStr := m.since
 	if sinceStr == "" {
 		sinceStr = "-"
 	}
 
-	status := strings.Join([]string{
-		labelStyle.Render("Service:") + "  " + stateStr,
-		labelStyle.Render("Since:") + "  " + sinceStr,
-		labelStyle.Render("URL:") + "  " + urlStr,
-	}, "\n")
+	m.renderInfoRow(b, 0, "Service", stateStr)
+	m.renderInfoRow(b, 1, "Uptime", sinceStr)
+	m.renderInfoRow(b, 2, "URL", urlStr)
+	b.WriteString("\n")
+	m.renderActionRow(b, 3, "Reload page")
+	m.renderActionRow(b, 4, "Restart service")
+	m.renderActionRow(b, 5, "Clear all data")
+}
 
-	cfg := strings.Join([]string{
-		labelStyle.Render("URL:") + "  " + m.cfgURL,
-		labelStyle.Render("Inspector:") + "  " + m.cfgInsp,
-		labelStyle.Render("HTTP Insp.:") + "  " + m.cfgHTTP,
-	}, "\n")
+func (m model) renderConfigTab(b *strings.Builder) {
+	urlValue := m.cfgURL
+	if m.mode == modeEdit && m.editField == "url" {
+		urlValue = m.input + "_"
+	}
 
-	panelHeader := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
+	m.renderInfoRow(b, 0, "URL", urlValue)
+	m.renderInfoRow(b, 1, "Inspector", m.cfgInsp)
+	m.renderInfoRow(b, 2, "HTTP Insp.", m.cfgHTTP)
+}
 
-	statusPanel := panelStyle.Render(
-		panelHeader.Render("Status") + "\n\n" + status,
-	)
-	configPanel := panelStyle.Render(
-		panelHeader.Render("Config") + "\n\n" + cfg,
-	)
+func (m model) renderFeaturesTab(b *strings.Builder) {
+	vncStr := inactiveStyle.Render("disabled")
+	if m.cfgVNC == "true" {
+		vncStr = activeStyle.Render("enabled")
+	}
+	cursorStr := inactiveStyle.Render("disabled")
+	if m.cfgCursor == "true" {
+		cursorStr = activeStyle.Render("enabled")
+	}
+
+	ttyStr := m.cfgTTY
+	if m.mode == modeEdit && m.editField == "tty" {
+		ttyStr = m.input + "_"
+	}
 
 	var volumeStr string
 	if m.audioErr {
@@ -407,80 +568,34 @@ func (m model) View() string {
 		volumeStr = activeStyle.Render(fmt.Sprintf("%s %d%%", bar, m.volume))
 	}
 
-	featuresPanel := panelStyle.Render(
-		panelHeader.Render("Features") + "\n\n" +
-			colHeaderStyle.Render("Name") + colHeaderStyle.Render("Config") + "\n" +
-			featureRow("VNC", m.cfgVNC, "true") + "\n" +
-			featureRow("Cursor", m.cfgCursor, "true") + "\n" +
-			colNameStyle.Render("TTY") + helpStyle.Render(m.cfgTTY) + "\n" +
-			colNameStyle.Render("Volume") + volumeStr,
-	)
-
-	var extRows []string
-	if len(m.exts) == 0 {
-		extRows = append(extRows, helpStyle.Render("  No extensions found"))
-	} else {
-		for i, ext := range m.exts {
-			status := inactiveStyle.Render("disabled")
-			if ext.enabled {
-				status = activeStyle.Render("enabled")
-			}
-			prefix := "  "
-			if m.mode == modeExtensions && i == m.extCursor {
-				prefix = "> "
-			}
-			extRows = append(extRows,
-				prefix+colNameStyle.Render(ext.dirName)+status+
-					helpStyle.Render("  v"+ext.version))
-		}
-	}
-	extTitle := panelHeader.Render("Extensions")
-	if m.mode == modeExtensions {
-		extTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("220")).Render("Extensions (select)")
-	}
-	extensionsPanel := panelStyle.Render(
-		extTitle + "\n\n" + strings.Join(extRows, "\n"),
-	)
-
-	var msgLine string
-	if m.mode == modeInput {
-		msgLine = messageStyle.Render(m.message+" ") + m.input + "_"
-	} else if m.message != "" {
-		msgLine = messageStyle.Render(m.message)
-	}
-
-	var help string
-	switch m.mode {
-	case modeExtensions:
-		help = helpStyle.Render("[↑/↓] select  [enter] toggle  [esc] back")
-	case modeVolume:
-		help = helpStyle.Render("[↑/↓] adjust  [m] mute/unmute  [esc] back")
-	default:
-		help = helpStyle.Render("[o] open URL  [r] reload  [R] restart  [c] clear data  [v] VNC  [m] cursor  [t] TTY  [a] volume  [e] extensions  [q] quit")
-	}
-
-	parts := []string{
-		titleStyle.Render(" WPE WebKit Kiosk "),
-		"",
-		statusPanel,
-		configPanel,
-		featuresPanel,
-		extensionsPanel,
-	}
-	if msgLine != "" {
-		parts = append(parts, "", msgLine)
-	}
-	parts = append(parts, "", help)
-
-	return strings.Join(parts, "\n")
+	m.renderInfoRow(b, 0, "VNC", vncStr)
+	m.renderInfoRow(b, 1, "Cursor", cursorStr)
+	m.renderInfoRow(b, 2, "TTY", ttyStr)
+	m.renderInfoRow(b, 3, "Volume", volumeStr)
 }
 
-func featureRow(name, cfgValue, enabledValue string) string {
-	cfgStr := inactiveStyle.Render("disabled")
-	if cfgValue == enabledValue {
-		cfgStr = activeStyle.Render("enabled")
+func (m model) renderExtensionsTab(b *strings.Builder) {
+	if len(m.exts) == 0 {
+		b.WriteString(helpStyle.Render("  No extensions found"))
+		b.WriteString("\n")
+		return
 	}
-	return colNameStyle.Render(name) + cfgStr
+	cursor := m.tabCursors[m.activeTab]
+	for i, ext := range m.exts {
+		if i == cursor {
+			b.WriteString(cursorStyle.Render("> "))
+		} else {
+			b.WriteString("  ")
+		}
+		statusStr := inactiveStyle.Render("disabled")
+		if ext.enabled {
+			statusStr = activeStyle.Render("enabled")
+		}
+		b.WriteString(labelStyle.Render(ext.dirName))
+		b.WriteString(statusStr)
+		b.WriteString(helpStyle.Render("  v" + ext.version))
+		b.WriteString("\n")
+	}
 }
 
 // -- Commands --
