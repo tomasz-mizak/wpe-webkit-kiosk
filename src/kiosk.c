@@ -8,6 +8,8 @@
 #include <string.h>
 #include <sys/statvfs.h>
 #include <unistd.h>
+#include <ifaddrs.h>
+#include <arpa/inet.h>
 
 static WebKitWebView *g_web_view = NULL;
 static WebKitNetworkSession *g_session = NULL;
@@ -190,8 +192,12 @@ static const gchar OVERLAY_SCRIPT_TEMPLATE[] =
     "  var o=document.createElement('div');\n"
     "  o.id='__kiosk-overlay';\n"
     "  document.documentElement.appendChild(o);\n"
+    "  var sr=o.attachShadow({mode:'open'});\n"
+    "  var s=document.createElement('style');\n"
+    "  s.textContent=':host{position:fixed;top:0;left:0;width:100%%;height:100%%;pointer-events:none;z-index:2147483647;}';\n"
+    "  sr.appendChild(s);\n"
     "  window.__kiosk={\n"
-    "    overlay:o,\n"
+    "    overlay:sr,\n"
     "    sendMessage:function(t,p){\n"
     "      return window.webkit.messageHandlers.__kiosk.postMessage(\n"
     "        JSON.stringify({type:t,data:p})\n"
@@ -200,15 +206,6 @@ static const gchar OVERLAY_SCRIPT_TEMPLATE[] =
     "    extensions:%s\n"
     "  };\n"
     "})();\n";
-
-static const gchar OVERLAY_CSS[] =
-    "#__kiosk-overlay {\n"
-    "  position: fixed;\n"
-    "  top: 0; left: 0;\n"
-    "  width: 100%; height: 100%;\n"
-    "  pointer-events: none;\n"
-    "  z-index: 2147483647;\n"
-    "}\n";
 
 static gchar *build_extensions_json(void)
 {
@@ -344,11 +341,33 @@ static void read_temperature(GString *json)
     g_string_append_c(json, ']');
 }
 
+static GHashTable *collect_ipv4_addresses(void)
+{
+    GHashTable *addrs = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
+    struct ifaddrs *ifap = NULL;
+    if (getifaddrs(&ifap) != 0)
+        return addrs;
+    for (struct ifaddrs *ifa = ifap; ifa; ifa = ifa->ifa_next) {
+        if (!ifa->ifa_addr || ifa->ifa_addr->sa_family != AF_INET)
+            continue;
+        if (g_strcmp0(ifa->ifa_name, "lo") == 0)
+            continue;
+        char buf[INET_ADDRSTRLEN];
+        struct sockaddr_in *sa = (struct sockaddr_in *)ifa->ifa_addr;
+        if (inet_ntop(AF_INET, &sa->sin_addr, buf, sizeof(buf)))
+            g_hash_table_insert(addrs, g_strdup(ifa->ifa_name), g_strdup(buf));
+    }
+    freeifaddrs(ifap);
+    return addrs;
+}
+
 static void read_network_stats(GString *json)
 {
     gchar *text = NULL;
     if (!g_file_get_contents("/proc/net/dev", &text, NULL, NULL))
         return;
+
+    GHashTable *ip_addrs = collect_ipv4_addresses();
 
     append_json_comma(json);
     g_string_append(json, "\"network\":[");
@@ -377,15 +396,23 @@ static void read_network_stats(GString *json)
 
         if (!first) g_string_append_c(json, ',');
         gchar *esc_iface = g_strescape(iface, NULL);
+        const gchar *ipv4 = g_hash_table_lookup(ip_addrs, iface);
         g_string_append_printf(json,
             "{\"iface\":\"%s\",\"rxBytes\":%lld,\"txBytes\":%lld,"
-            "\"rxPackets\":%lld,\"txPackets\":%lld}",
+            "\"rxPackets\":%lld,\"txPackets\":%lld",
             esc_iface, rx_bytes, tx_bytes, rx_packets, tx_packets);
+        if (ipv4) {
+            gchar *esc_ip = g_strescape(ipv4, NULL);
+            g_string_append_printf(json, ",\"ipv4\":\"%s\"", esc_ip);
+            g_free(esc_ip);
+        }
+        g_string_append_c(json, '}');
         g_free(esc_iface);
         first = FALSE;
     }
     g_strfreev(lines);
     g_free(text);
+    g_hash_table_destroy(ip_addrs);
     g_string_append_c(json, ']');
 }
 
@@ -551,13 +578,6 @@ static gboolean on_script_message(WebKitUserContentManager *manager,
 
 static void setup_overlay(WebKitUserContentManager *manager)
 {
-    /* Base overlay CSS */
-    WebKitUserStyleSheet *sheet = webkit_user_style_sheet_new(
-        OVERLAY_CSS, WEBKIT_USER_CONTENT_INJECT_TOP_FRAME,
-        WEBKIT_USER_STYLE_LEVEL_USER, NULL, NULL);
-    webkit_user_content_manager_add_style_sheet(manager, sheet);
-    webkit_user_style_sheet_unref(sheet);
-
     /* Base overlay script with extensions metadata */
     gchar *ext_json = build_extensions_json();
     gchar *script_src = g_strdup_printf(OVERLAY_SCRIPT_TEMPLATE, ext_json);
@@ -591,11 +611,22 @@ static void register_extension_content(WebKitUserContentManager *manager)
                 gchar *css = read_text_file(path);
                 g_free(path);
                 if (!css) continue;
-                WebKitUserStyleSheet *s = webkit_user_style_sheet_new(
-                    css, WEBKIT_USER_CONTENT_INJECT_TOP_FRAME,
-                    WEBKIT_USER_STYLE_LEVEL_USER, NULL, NULL);
-                webkit_user_content_manager_add_style_sheet(manager, s);
-                webkit_user_style_sheet_unref(s);
+                /* Inject CSS into shadow root via JS */
+                gchar *escaped = g_strescape(css, NULL);
+                gchar *inject_js = g_strdup_printf(
+                    "(function(){var k=window.__kiosk;"
+                    "if(!k||!k.overlay)return;"
+                    "var s=document.createElement('style');"
+                    "s.textContent=\"%s\";"
+                    "k.overlay.appendChild(s);"
+                    "})();", escaped);
+                WebKitUserScript *css_script = webkit_user_script_new(
+                    inject_js, WEBKIT_USER_CONTENT_INJECT_TOP_FRAME,
+                    WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_END, NULL, NULL);
+                webkit_user_content_manager_add_script(manager, css_script);
+                webkit_user_script_unref(css_script);
+                g_free(inject_js);
+                g_free(escaped);
                 g_free(css);
             }
         }
