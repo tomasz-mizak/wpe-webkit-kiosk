@@ -50,4 +50,5 @@ package: launcher cli
 	cp /build/debian/postinst $(STAGING)/DEBIAN/
 	cp /build/debian/prerm $(STAGING)/DEBIAN/
 	chmod 755 $(STAGING)/DEBIAN/postinst $(STAGING)/DEBIAN/prerm
+	echo "/etc/wpe-webkit-kiosk/config" > $(STAGING)/DEBIAN/conffiles
 	dpkg-deb --build $(STAGING) /output/wpe-webkit-kiosk_$(WEBKIT_VER)_amd64.deb
