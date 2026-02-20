@@ -10,6 +10,7 @@ ExecStartPre=/bin/mkdir -p /run/user/0
 ExecStart=/opt/wpe-webkit-kiosk/bin/kiosk-start
 Restart=always
 RestartSec=3
+ExecStopPost=/usr/bin/bash -c 'killall pipewire pipewire-pulse wireplumber 2>/dev/null || true'
 Environment=XDG_RUNTIME_DIR=/run/user/0
 Environment=WLR_LIBINPUT_NO_DEVICES=1
 
