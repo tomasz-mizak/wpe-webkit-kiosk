@@ -19,7 +19,14 @@ if [ -f "$CONFIG" ]; then
 fi
 
 # Library paths
-ARCH=$(dpkg-architecture -qDEB_HOST_MULTIARCH)
+ARCH=$(uname -m)-linux-gnu
+# Normalize: dpkg uses x86_64 -> x86_64-linux-gnu but multiarch triplet is x86_64-linux-gnu
+case "$(uname -m)" in
+    x86_64)  ARCH="x86_64-linux-gnu" ;;
+    aarch64) ARCH="aarch64-linux-gnu" ;;
+    armv7l)  ARCH="arm-linux-gnueabihf" ;;
+    *)       ARCH="$(uname -m)-linux-gnu" ;;
+esac
 export LD_LIBRARY_PATH="${PREFIX}/lib/${ARCH}:${PREFIX}/lib:${LD_LIBRARY_PATH:-}"
 export XDG_DATA_DIRS="${PREFIX}/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
 
