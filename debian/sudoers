@@ -6,3 +6,4 @@ ALL ALL=(root) NOPASSWD: /usr/bin/systemctl restart wpe-webkit-kiosk-vnc
 ALL ALL=(root) NOPASSWD: /usr/bin/tee /etc/wpe-webkit-kiosk/config
 ALL ALL=(root) NOPASSWD: /usr/bin/touch /opt/wpe-webkit-kiosk/extensions/*/.disabled
 ALL ALL=(root) NOPASSWD: /usr/bin/rm /opt/wpe-webkit-kiosk/extensions/*/.disabled
+ALL ALL=(root) NOPASSWD: /usr/bin/amixer
