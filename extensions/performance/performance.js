@@ -59,7 +59,7 @@
   var el = {};
   var ids = ['fps','fps-bar','cpu','cpu-bar','load','mem','mem-bar','swap',
              'proc-mem','temp','gpu','net','disk','uptime','pid','threads','title'];
-  ids.forEach(function (id) { el[id] = document.getElementById('__p-' + id); });
+  ids.forEach(function (id) { el[id] = kiosk.overlay.getElementById('__p-' + id); });
 
   /* ---- FPS counter ---- */
   var frames = 0;
@@ -187,7 +187,7 @@
         el.gpu.textContent = gpuText;
       }
 
-      /* Network (with rate calculation) */
+      /* Network (with rate calculation and IP display) */
       if (s.network) {
         var now = Date.now();
         var html = '';
@@ -201,9 +201,12 @@
                    '/s \u2191' + formatBytes(Math.round(txRate)) + '/s</span>';
           }
           prevNet[n.iface] = { rx: n.rxBytes, tx: n.txBytes };
+          var ipLine = n.ipv4
+            ? '<div class="perf-row"><span class="perf-label"></span><span class="perf-value perf-muted">' + n.ipv4 + '</span></div>'
+            : '';
           html += '<div class="perf-row"><span class="perf-label">' + n.iface +
                   '</span><span class="perf-value">' +
-                  formatBytes(n.rxBytes) + rate + '</span></div>';
+                  formatBytes(n.rxBytes) + rate + '</span></div>' + ipLine;
         });
         prevNetTime = now;
         el.net.innerHTML = html || '<span class="perf-muted">no interfaces</span>';
