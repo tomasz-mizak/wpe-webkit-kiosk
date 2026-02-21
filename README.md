@@ -1,48 +1,45 @@
 # WPE WebKit Kiosk
 
-A `.deb` package of [WPE WebKit](https://wpewebkit.org) for fullscreen kiosk applications on Ubuntu. Uses the modern [WPEPlatform API](https://wpewebkit.org) with `linux-dmabuf` buffer sharing -- no dependency on deprecated EGL extensions.
+A `.deb` package that turns any Ubuntu machine into a fullscreen web kiosk. Built on [WPE WebKit](https://wpewebkit.org) with the modern WPEPlatform API and `linux-dmabuf` buffer sharing -- no dependency on deprecated EGL extensions.
 
-## Tested platforms
+Comes with a terminal dashboard (`kiosk`), a REST API for remote management, VNC remote access, a JavaScript extension system, and D-Bus control -- everything needed to deploy and manage kiosks at scale.
 
 | Platform | Status |
 |---|---|
 | Ubuntu 24.04 LTS (amd64, Wayland) | Supported |
 
-## Technology stack
+## Terminal dashboard
 
-### WebKit
+The `kiosk` command launches an interactive TUI for managing the kiosk directly on the machine.
 
-The browser engine -- the same core that powers Safari. It parses HTML/CSS, executes JavaScript, and renders web pages. There are three major "ports" of WebKit:
+| Status | Config |
+|---|---|
+| ![Status tab](doc/status.png) | ![Config tab](doc/config.png) |
 
-- **Apple WebKit** -- Safari on macOS/iOS
-- **WebKitGTK** -- for GNOME desktop apps (e.g. Epiphany)
-- **WPE WebKit** -- for embedded/kiosk devices (this project)
+| Features | Extensions |
+|---|---|
+| ![Features tab](doc/features.png) | ![Extensions tab](doc/extensions.png) |
 
-### WPE (Web Platform for Embedded)
+**Tabs:** Status (service state, uptime, URL, actions) / Config (URL, inspector ports) / Features (VNC, cursor, TTY, volume) / Extensions (list, enable/disable).
 
-A WebKit port optimized for devices without a full desktop environment -- set-top boxes, kiosks, in-vehicle infotainment. Developed by [Igalia](https://igalia.com). Unlike WebKitGTK, it does not require GTK or a desktop stack -- it renders directly through EGL/DRM.
+Navigation: `[left/right]` switch tabs, `[up/down]` select items, `[enter]` activate, `[q]` quit.
 
-### libwpe
+The same commands are available as a CLI:
 
-A small library (~200KB) that defines the platform abstraction for WPE WebKit. WebKit compiles against it to communicate with the graphics system. In our build it is purely a build-time dependency -- WebKit will not compile without it, but at runtime it has no active role.
-
-### WPEPlatform API
-
-A built-in mechanism (since WebKit 2.44+) for connecting WebKit to Wayland. It uses the `linux-dmabuf` protocol for GPU buffer sharing, which is the modern standard supported by all current Mesa versions. This replaces the older `wpebackend-fdo` + `Cog` stack, which depended on an EGL extension (`eglCreateWaylandBufferFromImageWL`) that Mesa 25.2+ removed.
-
-### cage (Wayland compositor)
-
-A Wayland compositor takes pixel buffers from applications, arranges them on screen (position, size, z-order), optionally adds effects (shadows, transparency), and sends the final composited image to the display. Think of it as a video editor that layers multiple sources into one output frame.
-
-[cage](https://github.com/cage-compositor/cage) is the simplest possible compositor -- it takes one application, stretches it fullscreen, and that's it. No window decorations, no taskbar, no effects. This makes it ideal for kiosk use.
-
-### wpe-webkit-kiosk-bin (src/kiosk.c)
-
-Our custom launcher -- ~150 lines of C. It creates a `WebKitWebView` using the WPEPlatform API, sets it to fullscreen, loads the configured URL, and exposes a D-Bus interface (`com.wpe.Kiosk`) on the system bus for remote control (navigate, reload, get current URL).
-
-### wpe-webkit-kiosk (shell wrapper)
-
-A bash script that reads `/etc/wpe-webkit-kiosk/config`, sets up `LD_LIBRARY_PATH` (because WebKit is installed in `/opt/wpe-webkit-kiosk`, not in system library paths), configures the Remote Inspector, and executes `wpe-webkit-kiosk-bin`.
+```bash
+kiosk status              # Service state, uptime, current URL
+kiosk open <url>          # Navigate to URL (saves to config)
+kiosk reload              # Reload current page
+kiosk url                 # Print current URL
+kiosk config show         # Show all settings
+kiosk config set KEY VAL  # Update a config value
+kiosk extension list      # List extensions
+kiosk extension enable X  # Enable extension
+kiosk clear-data          # Clear cache, cookies, browsing data
+kiosk volume set 80       # Set volume to 80%
+kiosk logs -f             # Tail service logs
+kiosk restart             # Restart kiosk service
+```
 
 ## Architecture
 
@@ -50,32 +47,44 @@ A bash script that reads `/etc/wpe-webkit-kiosk/config`, sets up `LD_LIBRARY_PAT
 
 ```
 systemd
-  └─ cage (Wayland compositor -- provides the display)
-       └─ wpe-webkit-kiosk (wrapper -- reads config, sets environment)
-            └─ wpe-webkit-kiosk-bin (our C launcher)
-                 ├─ WPEPlatform Wayland (connects rendering to cage via linux-dmabuf)
-                 ├─ WPENetworkProcess (isolated process for network requests)
-                 ├─ WPEWebProcess (isolated process for page rendering)
-                 └─ D-Bus (com.wpe.Kiosk -- remote control interface)
+  ├─ wpe-webkit-kiosk.service
+  │    └─ cage (Wayland compositor)
+  │         └─ wpe-webkit-kiosk (shell wrapper -- reads config, sets env)
+  │              └─ wpe-webkit-kiosk-bin (C launcher)
+  │                   ├─ WPEPlatform Wayland (linux-dmabuf buffer sharing)
+  │                   ├─ WPENetworkProcess (isolated network I/O)
+  │                   ├─ WPEWebProcess (isolated page rendering)
+  │                   └─ D-Bus (com.wpe.Kiosk)
+  │
+  ├─ wpe-webkit-kiosk-api.service
+  │    └─ kiosk-api (Go REST server, port 8100)
+  │
+  └─ wpe-webkit-kiosk-vnc.service (optional)
+       └─ wayvnc (Wayland-native VNC, port 5900)
 ```
 
-WebKit intentionally spawns separate processes for networking and rendering. If a web page crashes, the main process and the compositor survive and reload the page automatically.
+WebKit spawns separate processes for networking and rendering. If a web page crashes, the compositor survives and the page reloads automatically.
 
 ### Runtime diagram
 
 ```mermaid
 flowchart LR
-    subgraph Service["wpe-webkit-kiosk.service"]
+    subgraph Main["wpe-webkit-kiosk.service"]
         direction TB
         CAGE["cage\n(Wayland compositor)"]
         WRAPPER["wpe-webkit-kiosk\n(shell wrapper)"]
         BIN["wpe-webkit-kiosk-bin\n(WPEPlatform browser)"]
-
         CAGE --> WRAPPER --> BIN
+    end
+
+    subgraph API["wpe-webkit-kiosk-api.service"]
+        APIBIN["kiosk-api\n(Go REST server)"]
     end
 
     GPU["Mesa / DRM"] <--> CAGE
     DBUS["D-Bus\n(com.wpe.Kiosk)"] <--> BIN
+    DBUS <--> APIBIN
+    HTTP["HTTP :8100"] <--> APIBIN
 ```
 
 ### Build-time dependency chain
@@ -84,12 +93,27 @@ flowchart LR
 flowchart BT
     libwpe["libwpe 1.16.3\n(build dependency)"]
     webkit["WPE WebKit 2.50.5\n(browser engine + WPEPlatform)"]
-    launcher["wpe-webkit-kiosk-bin\n(custom C launcher)"]
+    launcher["wpe-webkit-kiosk-bin\n(C launcher)"]
+    cli["kiosk + kiosk-api\n(Go management tools)"]
 
     libwpe --> webkit --> launcher
+    webkit -.->|"links"| cli
 ```
 
-WebKit is compiled with `ENABLE_WPE_PLATFORM=ON` and `ENABLE_WPE_PLATFORM_WAYLAND=ON`, providing built-in Wayland support via the `linux-dmabuf` protocol.
+### Technology stack
+
+| Layer | Technology |
+|---|---|
+| Browser engine | WPE WebKit 2.50.5 (WPEPlatform API, linux-dmabuf) |
+| Compositor | [cage](https://github.com/cage-compositor/cage) (single-app Wayland compositor) |
+| Launcher | C (gcc), ~900 lines, GLib/GIO, json-glib |
+| CLI / TUI | Go 1.24, [Cobra](https://github.com/spf13/cobra), [Bubbletea](https://github.com/charmbracelet/bubbletea), [Lipgloss](https://github.com/charmbracelet/lipgloss) |
+| REST API | Go `net/http`, OpenAPI 3.0, Swagger UI |
+| IPC | D-Bus system bus (`com.wpe.Kiosk`) |
+| Audio | ALSA (`amixer`) |
+| Remote access | VNC ([wayvnc](https://github.com/any1/wayvnc)) |
+| Process manager | systemd (3 services) |
+| Packaging | `.deb` (dpkg), Docker multi-stage build |
 
 ## Configuration
 
@@ -126,33 +150,11 @@ After editing, restart the service:
 sudo systemctl restart wpe-webkit-kiosk
 ```
 
-### Remote Inspector
-
-The Remote Inspector is always enabled. Two endpoints are available:
-
-- **Inspector protocol** at `inspector://<ip>:8080`
-- **HTTP inspector** at `http://<ip>:8090`
-
-### D-Bus control
-
-The kiosk exposes `com.wpe.Kiosk` on the **system** D-Bus:
-
-```bash
-# Navigate to a URL
-sudo dbus-send --system --print-reply --dest=com.wpe.Kiosk / com.wpe.Kiosk.Open string:'https://example.com'
-
-# Get current URL
-sudo dbus-send --system --print-reply --dest=com.wpe.Kiosk / com.wpe.Kiosk.GetUrl
-
-# Reload page
-sudo dbus-send --system --print-reply --dest=com.wpe.Kiosk / com.wpe.Kiosk.Reload
-```
+## Remote management
 
 ### REST API
 
-The kiosk includes a REST API server for remote management over HTTP. It runs as a separate systemd service (`wpe-webkit-kiosk-api`) on the configured `API_PORT` (default `8100`).
-
-All endpoints require the `X-Api-Key` header with the token from the config file. A token is generated automatically during package installation.
+A separate systemd service (`wpe-webkit-kiosk-api`) exposes a REST API on the configured `API_PORT` (default `8100`). All endpoints require the `X-Api-Key` header.
 
 **Base URL:** `http://<ip>:8100/wpe-webkit-kiosk/api/v1`
 
@@ -172,65 +174,90 @@ All endpoints require the `X-Api-Key` header with the token from the config file
 
 **Swagger UI** is available at `http://<ip>:8100/wpe-webkit-kiosk/api/v1/docs` (no authentication required).
 
-#### Examples
-
 ```bash
 # Get kiosk status
-curl -H "X-Api-Key: $TOKEN" http://192.168.18.37:8100/wpe-webkit-kiosk/api/v1/status
+curl -H "X-Api-Key: $TOKEN" http://<ip>:8100/wpe-webkit-kiosk/api/v1/status
 
 # Navigate to a URL
 curl -X POST -H "X-Api-Key: $TOKEN" -H "Content-Type: application/json" \
   -d '{"url": "https://example.com"}' \
-  http://192.168.18.37:8100/wpe-webkit-kiosk/api/v1/navigate
+  http://<ip>:8100/wpe-webkit-kiosk/api/v1/navigate
 
-# Get system info
-curl -H "X-Api-Key: $TOKEN" http://192.168.18.37:8100/wpe-webkit-kiosk/api/v1/system
+# Get system telemetry
+curl -H "X-Api-Key: $TOKEN" http://<ip>:8100/wpe-webkit-kiosk/api/v1/system
 ```
 
-All responses follow a consistent JSON envelope:
+All responses use a consistent JSON envelope:
 
 ```json
 {"data": { ... }, "error": null}
 {"data": null, "error": {"code": "unauthorized", "message": "Invalid API key"}}
 ```
 
-#### API token management
+**Token management:**
 
 ```bash
-# Show current token
-kiosk api token show
-
-# Regenerate token (restarts API service automatically)
-kiosk api token regenerate
-
-# Check API service status
-kiosk api status
+kiosk api token show         # Show current token
+kiosk api token regenerate   # Regenerate (restarts API service)
+kiosk api status             # Check API service status
 ```
+
+### D-Bus interface
+
+The kiosk exposes `com.wpe.Kiosk` on the system D-Bus:
+
+```bash
+# Navigate
+sudo dbus-send --system --print-reply --dest=com.wpe.Kiosk / com.wpe.Kiosk.Open string:'https://example.com'
+
+# Get current URL
+sudo dbus-send --system --print-reply --dest=com.wpe.Kiosk / com.wpe.Kiosk.GetUrl
+
+# Reload
+sudo dbus-send --system --print-reply --dest=com.wpe.Kiosk / com.wpe.Kiosk.Reload
+```
+
+### Remote Inspector
+
+Always enabled:
+
+- **Inspector protocol:** `inspector://<ip>:8080`
+- **HTTP inspector:** `http://<ip>:8090`
+
+### VNC
+
+When `VNC_ENABLED=true`, a Wayland-native VNC server (`wayvnc`) runs on the configured port (default `5900`). Connect with any VNC client.
+
+## Extensions
+
+JavaScript extensions are loaded from `EXTENSIONS_DIR` (default `/opt/wpe-webkit-kiosk/extensions`). Each extension is a directory containing a `manifest.json`:
+
+```
+extensions/performance/
+├── manifest.json       # {"name", "version", "description", "scripts", "styles"}
+├── performance.js      # Injected into WebKit context
+└── performance.css     # Injected styles
+```
+
+Manage extensions via TUI (Extensions tab), CLI (`kiosk extension list/enable/disable`), or REST API.
 
 ## Installation
 
 ### Prerequisites
 
-The target system needs [cage](https://github.com/cage-compositor/cage) installed:
-
 ```bash
 sudo apt install cage
 ```
 
-### Install the package
+### Install
 
 ```bash
 sudo dpkg -i wpe-webkit-kiosk_<version>_amd64.deb
-```
-
-### Enable and start
-
-```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now wpe-webkit-kiosk
 ```
 
-### Check status
+### Verify
 
 ```bash
 sudo systemctl status wpe-webkit-kiosk
@@ -239,91 +266,74 @@ sudo journalctl -u wpe-webkit-kiosk -f
 
 ## Building
 
-### Prerequisites
-
-- Docker
-
-### Build
+Requires Docker. The first build compiles WPE WebKit from source (~1h). Subsequent builds reuse the cached WebKit layer and only recompile the launcher and Go tools.
 
 ```bash
-make deb
-```
-
-This produces `output/wpe-webkit-kiosk_0.0.0-dev_amd64.deb` (dev build). The first build compiles WPE WebKit from source inside Docker (~1h). Subsequent builds reuse the cached WebKit layer and only recompile the launcher.
-
-To build with a specific version:
-
-```bash
-make deb VERSION=1.0.0
-```
-
-### Clean
-
-```bash
-make clean
+make deb                    # Dev build → output/wpe-webkit-kiosk_0.0.0-dev_amd64.deb
+make deb VERSION=1.0.0      # Versioned build
+make clean                  # Remove build artifacts
 ```
 
 ## Releasing
 
-The project uses [semantic versioning](https://semver.org/) and [conventional commits](https://www.conventionalcommits.org/). Releases are fully automated via GitHub Actions.
-
-### How to release
-
-1. Tag the commit with a version prefixed by `v`:
+The project uses [semantic versioning](https://semver.org/) and [conventional commits](https://www.conventionalcommits.org/). Releases are automated via GitHub Actions.
 
 ```bash
 git tag v1.0.0
 git push --tags
 ```
 
-2. GitHub Actions automatically:
-   - Builds the `.deb` package with the tag version
-   - Generates a changelog from conventional commits (using [git-cliff](https://git-cliff.org/))
-   - Creates a GitHub Release with the changelog and `.deb` attached
-
-### Commit message convention
-
-Commit messages determine changelog sections:
+GitHub Actions builds the `.deb`, generates a changelog with [git-cliff](https://git-cliff.org/), and creates a GitHub Release with the package attached.
 
 | Prefix | Changelog section | Semver bump |
 |---|---|---|
 | `feat:` | Features | minor |
 | `fix:` | Bug Fixes | patch |
 | `perf:` | Performance | patch |
-| `docs:` | Documentation | — |
-| `refactor:` | Refactoring | — |
-| `chore:` / `ci:` / `build:` | Miscellaneous | — |
+| `docs:` | Documentation | -- |
+| `refactor:` | Refactoring | -- |
+| `chore:` / `ci:` / `build:` | Miscellaneous | -- |
 
-Breaking changes (any type with `!`, e.g. `feat!:`) require a major version bump.
+Breaking changes (`feat!:`, `fix!:`, etc.) require a major version bump.
 
 ## Project structure
 
 ```
 .
-├── Dockerfile                  # Multi-stage Docker build (WebKit cached)
-├── Makefile                    # Top-level build: `make deb`
-├── build.mk                   # Inner Makefile: libwpe, WebKit, launcher, API
+├── Dockerfile                         # Multi-stage Docker build (base → webkit → final)
+├── Makefile                           # Top-level build: make deb
+├── build.mk                          # Inner Makefile: launcher, CLI, API, .deb packaging
+├── webkit.mk                         # WebKit + libwpe compilation rules
 ├── src/
-│   └── kiosk.c                # WPEPlatform launcher with D-Bus interface
-├── cmd/kiosk/                  # Go management tools
-│   ├── main.go                # CLI/TUI entry point (`kiosk` binary)
-│   ├── cmd/api/main.go        # REST API server entry point (`kiosk-api` binary)
-│   ├── internal/api/          # API server (handlers, auth, routes, docs)
-│   ├── internal/config/       # Config file parser (shared)
-│   ├── internal/dbus/         # D-Bus client (shared)
-│   └── internal/tui/          # Terminal UI dashboard
-├── doc/api/
-│   └── openapi.yaml           # OpenAPI 3.0 specification
-├── extensions/                 # Built-in JS extensions
-└── debian/
-    ├── control                 # Package metadata and dependencies
-    ├── config                  # Default kiosk configuration
-    ├── postinst                # Post-install (ALSA defaults, API token)
-    ├── wpe-webkit-kiosk               # Shell wrapper (reads config, sets env)
-    ├── wpe-webkit-kiosk.service       # systemd unit (cage + kiosk)
-    ├── wpe-webkit-kiosk-api.service   # systemd unit (REST API server)
-    ├── wpe-webkit-kiosk-vnc.service   # systemd unit (VNC, optional)
-    └── com.wpe.Kiosk.conf      # D-Bus policy for system bus
+│   └── kiosk.c                       # C launcher: WebKit + D-Bus + extension loader
+├── cmd/kiosk/
+│   ├── main.go                       # CLI/TUI entry point (kiosk binary)
+│   ├── cmd_*.go                      # CLI commands (status, open, config, volume, etc.)
+│   ├── cmd/api/main.go               # REST API entry point (kiosk-api binary)
+│   └── internal/
+│       ├── api/                      # REST API (server, routes, handlers, auth, docs)
+│       ├── config/                   # Config file parser (shared)
+│       ├── dbus/                     # D-Bus client (shared)
+│       ├── audio/                    # ALSA volume control
+│       └── tui/                      # Bubbletea terminal dashboard
+├── extensions/
+│   └── performance/                  # Built-in performance overlay extension
+├── doc/
+│   └── api/openapi.yaml              # OpenAPI 3.0 specification
+├── debian/
+│   ├── control                       # Package metadata and dependencies
+│   ├── config                        # Default kiosk configuration
+│   ├── postinst                      # Post-install (ALSA defaults, API token generation)
+│   ├── prerm                         # Pre-remove cleanup
+│   ├── sudoers                       # Sudo rules for privileged operations
+│   ├── wpe-webkit-kiosk              # Shell wrapper (reads config, sets env)
+│   ├── kiosk-start                   # Systemd ExecStart (cage + wrapper)
+│   ├── wpe-webkit-kiosk.service      # Main service (cage + kiosk)
+│   ├── wpe-webkit-kiosk-api.service  # REST API service
+│   ├── wpe-webkit-kiosk-vnc.service  # VNC service (optional)
+│   ├── wpe-webkit-kiosk-vnc-check    # VNC availability check
+│   └── com.wpe.Kiosk.conf            # D-Bus policy for system bus
+└── .github/workflows/                # Release pipeline (tag → build → publish)
 ```
 
 ## License
