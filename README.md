@@ -243,23 +243,40 @@ Manage extensions via TUI (Extensions tab), CLI (`kiosk extension list/enable/di
 
 ## Installation
 
-### Prerequisites
+### Install via APT (recommended)
+
+Add the repository and install:
+
+```bash
+# Add GPG key
+curl -fsSL https://tomasz-mizak.github.io/wpe-webkit-kiosk/gpg.key \
+  | sudo gpg --dearmor -o /usr/share/keyrings/wpe-kiosk.gpg
+
+# Add repository
+echo "deb [signed-by=/usr/share/keyrings/wpe-kiosk.gpg] https://tomasz-mizak.github.io/wpe-webkit-kiosk stable main" \
+  | sudo tee /etc/apt/sources.list.d/wpe-kiosk.list
+
+# Install
+sudo apt update
+sudo apt install cage wpe-webkit-kiosk
+```
+
+Updates are delivered automatically via `apt upgrade`.
+
+### Install from .deb (manual)
+
+Download the `.deb` from [GitHub Releases](https://github.com/tomasz-mizak/wpe-webkit-kiosk/releases) and install manually:
 
 ```bash
 sudo apt install cage
+sudo dpkg -i wpe-webkit-kiosk_<version>_amd64.deb
 ```
 
-### Install
+### Enable and verify
 
 ```bash
-sudo dpkg -i wpe-webkit-kiosk_<version>_amd64.deb
 sudo systemctl daemon-reload
 sudo systemctl enable --now wpe-webkit-kiosk
-```
-
-### Verify
-
-```bash
 sudo systemctl status wpe-webkit-kiosk
 sudo journalctl -u wpe-webkit-kiosk -f
 ```
