@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  pages: write
 
 jobs:
   release:
@@ -58,3 +59,32 @@ jobs:
         with:
           body: ${{ steps.changelog.outputs.content }}
           files: output/wpe-webkit-kiosk_${{ steps.version.outputs.version }}_amd64.deb
+
+      - name: Import GPG key
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+          echo "GPG key imported"
+
+      - name: Checkout gh-pages branch
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+
+      - name: Publish to APT repository
+        run: |
+          sudo apt-get update && sudo apt-get install -y reprepro
+          cd gh-pages
+          reprepro --ask-passphrase includedeb stable \
+            "$GITHUB_WORKSPACE/output/wpe-webkit-kiosk_${{ steps.version.outputs.version }}_amd64.deb"
+        env:
+          REPREPRO_GNUPGHOME: ~/.gnupg
+
+      - name: Push updated APT repository
+        run: |
+          cd gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "apt: update repo for v${{ steps.version.outputs.version }}"
+          git push origin gh-pages
