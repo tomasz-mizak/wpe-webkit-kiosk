@@ -1,5 +1,6 @@
 # Runs inside Docker — compiles kiosk launcher and packages .deb
 WEBKIT_VER       := 2.50.5
+PKG_VERSION      ?= 0.0.0-dev
 
 PREFIX           := /opt/wpe-webkit-kiosk
 ARCH             := $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
@@ -54,8 +55,9 @@ package: launcher cli api
 	if [ -d /build/extensions ]; then cp -r /build/extensions/* $(STAGING)$(PREFIX)/extensions/; fi
 	mkdir -p $(STAGING)/DEBIAN
 	cp /build/debian/control $(STAGING)/DEBIAN/
+	sed -i 's/^Version:.*/Version: $(PKG_VERSION)/' $(STAGING)/DEBIAN/control
 	cp /build/debian/postinst $(STAGING)/DEBIAN/
 	cp /build/debian/prerm $(STAGING)/DEBIAN/
 	chmod 755 $(STAGING)/DEBIAN/postinst $(STAGING)/DEBIAN/prerm
 	echo "/etc/wpe-webkit-kiosk/config" > $(STAGING)/DEBIAN/conffiles
-	dpkg-deb --build $(STAGING) /output/wpe-webkit-kiosk_$(WEBKIT_VER)_amd64.deb
+	dpkg-deb --build $(STAGING) /output/wpe-webkit-kiosk_$(PKG_VERSION)_amd64.deb
