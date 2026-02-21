@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WPE WebKit Kiosk — APT Repository</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+           background: #0d1117; color: #c9d1d9; min-height: 100vh;
+           display: flex; justify-content: center; padding: 3rem 1rem; }
+    main { max-width: 680px; width: 100%; }
+    h1 { color: #e6edf3; font-size: 1.6rem; margin-bottom: 0.3rem; }
+    .subtitle { color: #7d8590; margin-bottom: 2rem; }
+    h2 { color: #e6edf3; font-size: 1.1rem; margin: 1.8rem 0 0.8rem; }
+    pre { background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+          padding: 1rem; overflow-x: auto; font-size: 0.85rem; line-height: 1.6;
+          color: #c9d1d9; }
+    .comment { color: #7d8590; }
+    a { color: #58a6ff; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .links { margin-top: 2rem; display: flex; gap: 1.5rem; flex-wrap: wrap; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>WPE WebKit Kiosk</h1>
+    <p class="subtitle">APT Repository</p>
+
+    <h2>Install</h2>
+    <pre><span class="comment"># Add GPG key</span>
+curl -fsSL https://tomasz-mizak.github.io/wpe-webkit-kiosk/gpg.key \
+  | sudo gpg --dearmor -o /usr/share/keyrings/wpe-kiosk.gpg
+
+<span class="comment"># Add repository</span>
+echo "deb [signed-by=/usr/share/keyrings/wpe-kiosk.gpg] https://tomasz-mizak.github.io/wpe-webkit-kiosk stable main" \
+  | sudo tee /etc/apt/sources.list.d/wpe-kiosk.list
+
+<span class="comment"># Install</span>
+sudo apt update
+sudo apt install cage wpe-webkit-kiosk</pre>
+
+    <h2>Update</h2>
+    <pre>sudo apt update &amp;&amp; sudo apt upgrade</pre>
+
+    <div class="links">
+      <a href="https://github.com/tomasz-mizak/wpe-webkit-kiosk">GitHub</a>
+      <a href="https://github.com/tomasz-mizak/wpe-webkit-kiosk/releases">Releases</a>
+      <a href="https://github.com/tomasz-mizak/wpe-webkit-kiosk#readme">Documentation</a>
+    </div>
+  </main>
+</body>
+</html>
