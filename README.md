@@ -71,18 +71,18 @@ WebKit spawns separate processes for networking and rendering. If a web page cra
 flowchart LR
     subgraph Main["wpe-webkit-kiosk.service"]
         direction TB
-        CAGE["cage\n(Wayland compositor)"]
-        WRAPPER["wpe-webkit-kiosk\n(shell wrapper)"]
-        BIN["wpe-webkit-kiosk-bin\n(WPEPlatform browser)"]
+        CAGE["cage<br/>(Wayland compositor)"]
+        WRAPPER["wpe-webkit-kiosk<br/>(shell wrapper)"]
+        BIN["wpe-webkit-kiosk-bin<br/>(WPEPlatform browser)"]
         CAGE --> WRAPPER --> BIN
     end
 
     subgraph API["wpe-webkit-kiosk-api.service"]
-        APIBIN["kiosk-api\n(Go REST server)"]
+        APIBIN["kiosk-api<br/>(Go REST server)"]
     end
 
     GPU["Mesa / DRM"] <--> CAGE
-    DBUS["D-Bus\n(com.wpe.Kiosk)"] <--> BIN
+    DBUS["D-Bus<br/>(com.wpe.Kiosk)"] <--> BIN
     DBUS <--> APIBIN
     HTTP["HTTP :8100"] <--> APIBIN
 ```
@@ -91,10 +91,10 @@ flowchart LR
 
 ```mermaid
 flowchart BT
-    libwpe["libwpe 1.16.3\n(build dependency)"]
-    webkit["WPE WebKit 2.50.5\n(browser engine + WPEPlatform)"]
-    launcher["wpe-webkit-kiosk-bin\n(C launcher)"]
-    cli["kiosk + kiosk-api\n(Go management tools)"]
+    libwpe["libwpe 1.16.3<br/>(build dependency)"]
+    webkit["WPE WebKit 2.50.5<br/>(browser engine + WPEPlatform)"]
+    launcher["wpe-webkit-kiosk-bin<br/>(C launcher)"]
+    cli["kiosk + kiosk-api<br/>(Go management tools)"]
 
     libwpe --> webkit --> launcher
     webkit -.->|"links"| cli
