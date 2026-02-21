@@ -220,7 +220,7 @@ sudo apt install cage
 ### Install the package
 
 ```bash
-sudo dpkg -i wpe-webkit-kiosk_2.50.5_amd64.deb
+sudo dpkg -i wpe-webkit-kiosk_<version>_amd64.deb
 ```
 
 ### Enable and start
@@ -249,13 +249,52 @@ sudo journalctl -u wpe-webkit-kiosk -f
 make deb
 ```
 
-This produces `output/wpe-webkit-kiosk_2.50.5_amd64.deb`. The first build compiles WPE WebKit from source inside Docker (~1h). Subsequent builds reuse the cached WebKit layer and only recompile the launcher.
+This produces `output/wpe-webkit-kiosk_0.0.0-dev_amd64.deb` (dev build). The first build compiles WPE WebKit from source inside Docker (~1h). Subsequent builds reuse the cached WebKit layer and only recompile the launcher.
+
+To build with a specific version:
+
+```bash
+make deb VERSION=1.0.0
+```
 
 ### Clean
 
 ```bash
 make clean
 ```
+
+## Releasing
+
+The project uses [semantic versioning](https://semver.org/) and [conventional commits](https://www.conventionalcommits.org/). Releases are fully automated via GitHub Actions.
+
+### How to release
+
+1. Tag the commit with a version prefixed by `v`:
+
+```bash
+git tag v1.0.0
+git push --tags
+```
+
+2. GitHub Actions automatically:
+   - Builds the `.deb` package with the tag version
+   - Generates a changelog from conventional commits (using [git-cliff](https://git-cliff.org/))
+   - Creates a GitHub Release with the changelog and `.deb` attached
+
+### Commit message convention
+
+Commit messages determine changelog sections:
+
+| Prefix | Changelog section | Semver bump |
+|---|---|---|
+| `feat:` | Features | minor |
+| `fix:` | Bug Fixes | patch |
+| `perf:` | Performance | patch |
+| `docs:` | Documentation | — |
+| `refactor:` | Refactoring | — |
+| `chore:` / `ci:` / `build:` | Miscellaneous | — |
+
+Breaking changes (any type with `!`, e.g. `feat!:`) require a major version bump.
 
 ## Project structure
 
