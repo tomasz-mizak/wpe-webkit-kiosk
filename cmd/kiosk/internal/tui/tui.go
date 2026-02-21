@@ -19,6 +19,7 @@ import (
 
 const serviceName = "wpe-webkit-kiosk"
 const vncServiceName = "wpe-webkit-kiosk-vnc"
+const apiServiceName = "wpe-webkit-kiosk-api"
 
 // -- Styles --
 
@@ -141,6 +142,8 @@ type refreshMsg struct {
 	cfgVNC    string
 	cfgCursor string
 	cfgTTY    string
+	cfgAPI    string
+	apiState  string
 	volume    int
 	muted     bool
 	audioErr  bool
@@ -170,6 +173,8 @@ type model struct {
 	cfgVNC    string
 	cfgCursor string
 	cfgTTY    string
+	cfgAPI    string
+	apiState  string
 	volume    int
 	muted     bool
 	audioErr  bool
@@ -191,7 +196,7 @@ type model struct {
 func (m model) tabItemCount() int {
 	switch m.activeTab {
 	case tabStatus:
-		return 6
+		return 7
 	case tabConfig:
 		return 3
 	case tabFeatures:
@@ -226,6 +231,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cfgVNC = msg.cfgVNC
 		m.cfgCursor = msg.cfgCursor
 		m.cfgTTY = msg.cfgTTY
+		m.cfgAPI = msg.cfgAPI
+		m.apiState = msg.apiState
 		m.volume = msg.volume
 		m.muted = msg.muted
 		m.audioErr = msg.audioErr
@@ -304,13 +311,13 @@ func (m model) handleActivate() (tea.Model, tea.Cmd) {
 	switch m.activeTab {
 	case tabStatus:
 		switch cursor {
-		case 3:
+		case 4:
 			m.message = "Reloading..."
 			return m, reloadCmd()
-		case 4:
+		case 5:
 			m.message = "Restarting service..."
 			return m, restartCmd()
-		case 5:
+		case 6:
 			m.message = "Clearing all data..."
 			return m, clearDataCmd()
 		}
@@ -521,13 +528,28 @@ func (m model) renderStatusTab(b *strings.Builder) {
 		sinceStr = "-"
 	}
 
+	apiStr := m.cfgAPI
+	if apiStr == "" {
+		apiStr = "8100"
+	}
+	var apiInfo string
+	switch m.apiState {
+	case "":
+		apiInfo = helpStyle.Render("loading...")
+	case "active":
+		apiInfo = activeStyle.Render(m.apiState) + helpStyle.Render(" :"+apiStr)
+	default:
+		apiInfo = inactiveStyle.Render(m.apiState) + helpStyle.Render(" :"+apiStr)
+	}
+
 	m.renderInfoRow(b, 0, "Service", stateStr)
 	m.renderInfoRow(b, 1, "Uptime", sinceStr)
 	m.renderInfoRow(b, 2, "URL", urlStr)
+	m.renderInfoRow(b, 3, "API", apiInfo)
 	b.WriteString("\n")
-	m.renderActionRow(b, 3, "Reload page")
-	m.renderActionRow(b, 4, "Restart service")
-	m.renderActionRow(b, 5, "Clear all data")
+	m.renderActionRow(b, 4, "Reload page")
+	m.renderActionRow(b, 5, "Restart service")
+	m.renderActionRow(b, 6, "Clear all data")
 }
 
 func (m model) renderConfigTab(b *strings.Builder) {
@@ -637,6 +659,14 @@ func refreshCmd() tea.Cmd {
 			msg.cfgVNC = cfg.Get("VNC_ENABLED")
 			msg.cfgCursor = cfg.Get("CURSOR_VISIBLE")
 			msg.cfgTTY = cfg.Get("TTY")
+			msg.cfgAPI = cfg.Get("API_PORT")
+		}
+
+		if out, err := exec.Command("systemctl", "show", apiServiceName,
+			"--property=ActiveState", "--value").Output(); err == nil {
+			msg.apiState = strings.TrimSpace(string(out))
+		} else {
+			msg.apiState = "unknown"
 		}
 
 		if level, muted, err := audio.GetVolume(); err == nil {

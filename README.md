@@ -99,13 +99,26 @@ Edit `/etc/wpe-webkit-kiosk/config`:
 URL="https://example.com"
 INSPECTOR_PORT="8080"
 INSPECTOR_HTTP_PORT="8090"
+VNC_ENABLED="false"
+VNC_PORT="5900"
+CURSOR_VISIBLE="true"
+EXTENSIONS_DIR="/opt/wpe-webkit-kiosk/extensions"
+TTY="1"
+API_PORT="8100"
 ```
 
-| Option | Default | Description |
-|---|---|---|
-| `URL` | `https://wpewebkit.org` | Page to display |
-| `INSPECTOR_PORT` | `8080` | Remote Inspector port |
-| `INSPECTOR_HTTP_PORT` | `8090` | HTTP Inspector port |
+| Option | Default | Description | Live apply |
+|---|---|---|---|
+| `URL` | `https://wpewebkit.org` | Page to display | Yes |
+| `INSPECTOR_PORT` | `8080` | Remote Inspector port | No |
+| `INSPECTOR_HTTP_PORT` | `8090` | HTTP Inspector port | No |
+| `VNC_ENABLED` | `false` | Enable VNC remote access | No |
+| `VNC_PORT` | `5900` | VNC listening port | No |
+| `CURSOR_VISIBLE` | `true` | Show mouse cursor | No |
+| `EXTENSIONS_DIR` | `/opt/wpe-webkit-kiosk/extensions` | Extensions path | No |
+| `TTY` | `1` | Virtual terminal (1-12) | No |
+| `API_PORT` | `8100` | REST API server port | No |
+| `API_TOKEN` | *(generated at install)* | API authentication key | No |
 
 After editing, restart the service:
 
@@ -133,6 +146,65 @@ sudo dbus-send --system --print-reply --dest=com.wpe.Kiosk / com.wpe.Kiosk.GetUr
 
 # Reload page
 sudo dbus-send --system --print-reply --dest=com.wpe.Kiosk / com.wpe.Kiosk.Reload
+```
+
+### REST API
+
+The kiosk includes a REST API server for remote management over HTTP. It runs as a separate systemd service (`wpe-webkit-kiosk-api`) on the configured `API_PORT` (default `8100`).
+
+All endpoints require the `X-Api-Key` header with the token from the config file. A token is generated automatically during package installation.
+
+**Base URL:** `http://<ip>:8100/wpe-webkit-kiosk/api/v1`
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/status` | Service state, current URL, uptime |
+| `POST` | `/navigate` | Navigate to a URL (`{"url": "..."}`) |
+| `POST` | `/reload` | Reload current page |
+| `GET` | `/config` | Get all configuration values |
+| `PUT` | `/config` | Set a config value (`{"key": "...", "value": "..."}`) |
+| `POST` | `/clear` | Clear browsing data (`{"scope": "cache\|cookies\|all"}`) |
+| `GET` | `/extensions` | List installed extensions |
+| `POST` | `/extensions/{name}/enable` | Enable an extension |
+| `POST` | `/extensions/{name}/disable` | Disable an extension |
+| `POST` | `/restart` | Restart kiosk service |
+| `GET` | `/system` | System telemetry (CPU, memory, disk, network, temperature) |
+
+**Swagger UI** is available at `http://<ip>:8100/wpe-webkit-kiosk/api/v1/docs` (no authentication required).
+
+#### Examples
+
+```bash
+# Get kiosk status
+curl -H "X-Api-Key: $TOKEN" http://192.168.18.37:8100/wpe-webkit-kiosk/api/v1/status
+
+# Navigate to a URL
+curl -X POST -H "X-Api-Key: $TOKEN" -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com"}' \
+  http://192.168.18.37:8100/wpe-webkit-kiosk/api/v1/navigate
+
+# Get system info
+curl -H "X-Api-Key: $TOKEN" http://192.168.18.37:8100/wpe-webkit-kiosk/api/v1/system
+```
+
+All responses follow a consistent JSON envelope:
+
+```json
+{"data": { ... }, "error": null}
+{"data": null, "error": {"code": "unauthorized", "message": "Invalid API key"}}
+```
+
+#### API token management
+
+```bash
+# Show current token
+kiosk api token show
+
+# Regenerate token (restarts API service automatically)
+kiosk api token regenerate
+
+# Check API service status
+kiosk api status
 ```
 
 ## Installation
@@ -191,14 +263,27 @@ make clean
 .
 ├── Dockerfile                  # Multi-stage Docker build (WebKit cached)
 ├── Makefile                    # Top-level build: `make deb`
-├── build.mk                   # Inner Makefile: libwpe, WebKit, launcher
+├── build.mk                   # Inner Makefile: libwpe, WebKit, launcher, API
 ├── src/
 │   └── kiosk.c                # WPEPlatform launcher with D-Bus interface
+├── cmd/kiosk/                  # Go management tools
+│   ├── main.go                # CLI/TUI entry point (`kiosk` binary)
+│   ├── cmd/api/main.go        # REST API server entry point (`kiosk-api` binary)
+│   ├── internal/api/          # API server (handlers, auth, routes, docs)
+│   ├── internal/config/       # Config file parser (shared)
+│   ├── internal/dbus/         # D-Bus client (shared)
+│   └── internal/tui/          # Terminal UI dashboard
+├── doc/api/
+│   └── openapi.yaml           # OpenAPI 3.0 specification
+├── extensions/                 # Built-in JS extensions
 └── debian/
     ├── control                 # Package metadata and dependencies
     ├── config                  # Default kiosk configuration
+    ├── postinst                # Post-install (ALSA defaults, API token)
     ├── wpe-webkit-kiosk               # Shell wrapper (reads config, sets env)
-    ├── wpe-webkit-kiosk.service       # systemd unit (cage + wpe-webkit-kiosk)
+    ├── wpe-webkit-kiosk.service       # systemd unit (cage + kiosk)
+    ├── wpe-webkit-kiosk-api.service   # systemd unit (REST API server)
+    ├── wpe-webkit-kiosk-vnc.service   # systemd unit (VNC, optional)
     └── com.wpe.Kiosk.conf      # D-Bus policy for system bus
 ```
 

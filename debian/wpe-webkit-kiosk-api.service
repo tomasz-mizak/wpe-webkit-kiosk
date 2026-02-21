@@ -1,0 +1,13 @@
+[Unit]
+Description=WPE WebKit Kiosk REST API
+After=wpe-webkit-kiosk.service
+Wants=wpe-webkit-kiosk.service
+
+[Service]
+Type=simple
+ExecStart=/opt/wpe-webkit-kiosk/bin/kiosk-api
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
