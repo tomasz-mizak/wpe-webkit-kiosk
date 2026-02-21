@@ -1,6 +1,0 @@
-- semantic versioning + pipeline building artifact and releasing when tag was commited
-- Logging system: capture console logs (log/warn/error): WebKit C API signals for basic logs to journald
-- http server to remote manage wpe-webkit-kiosk, like refresh, change url etc... all what is included in golang CLI
-- dedicated user to wpe-webkit-kiosk?
-- readme update
-- addon to track network and console from devtools
