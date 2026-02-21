@@ -10,7 +10,7 @@ export PKG_CONFIG_PATH
 
 .PHONY: all package
 
-all: launcher cli package
+all: launcher cli api package
 
 # ---------- kiosk launcher ----------
 
@@ -24,9 +24,15 @@ cli:
 	mkdir -p $(STAGING)/usr/bin
 	cd /build/src/cli && CGO_ENABLED=0 go build -ldflags='-s -w' -o $(STAGING)/usr/bin/kiosk .
 
+# ---------- kiosk API server ----------
+
+api:
+	mkdir -p $(STAGING)$(PREFIX)/bin
+	cd /build/src/cli && CGO_ENABLED=0 go build -ldflags='-s -w' -o $(STAGING)$(PREFIX)/bin/kiosk-api ./cmd/api
+
 # ---------- package ----------
 
-package: launcher cli
+package: launcher cli api
 	cp /build/debian/wpe-webkit-kiosk $(STAGING)$(PREFIX)/bin/
 	chmod +x $(STAGING)$(PREFIX)/bin/wpe-webkit-kiosk
 	cp /build/debian/kiosk-start $(STAGING)$(PREFIX)/bin/
@@ -36,6 +42,7 @@ package: launcher cli
 	mkdir -p $(STAGING)/usr/lib/systemd/system
 	cp /build/debian/wpe-webkit-kiosk.service $(STAGING)/usr/lib/systemd/system/
 	cp /build/debian/wpe-webkit-kiosk-vnc.service $(STAGING)/usr/lib/systemd/system/
+	cp /build/debian/wpe-webkit-kiosk-api.service $(STAGING)/usr/lib/systemd/system/
 	cp /build/debian/wpe-webkit-kiosk-vnc-check $(STAGING)$(PREFIX)/bin/
 	chmod +x $(STAGING)$(PREFIX)/bin/wpe-webkit-kiosk-vnc-check
 	mkdir -p $(STAGING)/usr/share/dbus-1/system.d

@@ -8,9 +8,21 @@ if [ "$1" = "configure" ]; then
         amixer -q sset Speaker 80% unmute 2>/dev/null || true
     fi
 
+    # Generate API token on fresh install if not already present
+    CONFIG_FILE="/etc/wpe-webkit-kiosk/config"
+    if ! grep -q "^API_TOKEN=" "$CONFIG_FILE" 2>/dev/null; then
+        API_TOKEN=$(openssl rand -hex 32)
+        echo "" >> "$CONFIG_FILE"
+        echo "# REST API settings" >> "$CONFIG_FILE"
+        echo "API_PORT=\"8100\"" >> "$CONFIG_FILE"
+        echo "API_TOKEN=\"$API_TOKEN\"" >> "$CONFIG_FILE"
+    fi
+
     systemctl daemon-reload
     systemctl enable wpe-webkit-kiosk.service
     systemctl enable wpe-webkit-kiosk-vnc.service
+    systemctl enable wpe-webkit-kiosk-api.service
     systemctl start wpe-webkit-kiosk.service || true
     systemctl start wpe-webkit-kiosk-vnc.service || true
+    systemctl start wpe-webkit-kiosk-api.service || true
 fi

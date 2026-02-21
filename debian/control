@@ -19,4 +19,5 @@ Depends: libegl1, libepoxy0, libglib2.0-0, libgstreamer1.0-0,
  pipewire, pipewire-pulse, wireplumber,
  gstreamer1.0-alsa,
  dbus-user-session,
- alsa-utils
+ alsa-utils,
+ openssl

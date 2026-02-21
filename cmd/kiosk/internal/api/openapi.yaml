@@ -1,0 +1,472 @@
+openapi: "3.0.3"
+info:
+  title: WPE WebKit Kiosk API
+  description: REST API for managing the WPE WebKit Kiosk browser service.
+  version: "1.0.0"
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:8100/wpe-webkit-kiosk/api/v1
+    description: Local kiosk API
+
+security:
+  - ApiKeyAuth: []
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+
+  schemas:
+    SuccessEnvelope:
+      type: object
+      properties:
+        data:
+          description: Response payload
+        error:
+          type: "null"
+
+    ErrorEnvelope:
+      type: object
+      properties:
+        data:
+          type: "null"
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+
+paths:
+  /status:
+    get:
+      summary: Get kiosk status
+      description: Returns systemd service state, current URL, and uptime.
+      tags: [Status]
+      responses:
+        "200":
+          description: Kiosk status
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - properties:
+                      data:
+                        type: object
+                        properties:
+                          service:
+                            type: string
+                            example: active
+                          uptime:
+                            type: string
+                            nullable: true
+                            example: "Fri 2026-02-20 23:29:26 UTC"
+                          url:
+                            type: string
+                            nullable: true
+                            example: "https://wpewebkit.org/"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /navigate:
+    post:
+      summary: Navigate to URL
+      description: Changes the kiosk URL live via D-Bus and persists it in the config file.
+      tags: [Navigation]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url:
+                  type: string
+                  example: "https://example.com"
+      responses:
+        "200":
+          description: Navigation successful
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - properties:
+                      data:
+                        type: object
+                        properties:
+                          url:
+                            type: string
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "503":
+          description: Kiosk service not running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /reload:
+    post:
+      summary: Reload current page
+      description: Reloads the currently displayed page via D-Bus.
+      tags: [Navigation]
+      responses:
+        "200":
+          description: Page reloaded
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - properties:
+                      data:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                            example: reloaded
+        "503":
+          description: Kiosk service not running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /config:
+    get:
+      summary: Get all configuration
+      description: Returns all configuration key-value pairs (excludes API_TOKEN).
+      tags: [Configuration]
+      responses:
+        "200":
+          description: Configuration values
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - properties:
+                      data:
+                        type: object
+                        additionalProperties:
+                          type: string
+                        example:
+                          URL: "https://wpewebkit.org"
+                          INSPECTOR_PORT: "8080"
+                          VNC_ENABLED: "false"
+                          CURSOR_VISIBLE: "true"
+                          TTY: "1"
+                          API_PORT: "8100"
+    put:
+      summary: Set a configuration value
+      description: |
+        Updates a single configuration key. If the key is `URL`, the change is applied live.
+        For other keys, `restart_required` indicates whether the kiosk service needs a restart.
+        Setting `API_TOKEN` via this endpoint is forbidden.
+      tags: [Configuration]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key, value]
+              properties:
+                key:
+                  type: string
+                  example: INSPECTOR_PORT
+                value:
+                  type: string
+                  example: "9000"
+      responses:
+        "200":
+          description: Configuration updated
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - properties:
+                      data:
+                        type: object
+                        properties:
+                          key:
+                            type: string
+                          value:
+                            type: string
+                          restart_required:
+                            type: boolean
+        "400":
+          description: Invalid key or forbidden key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /clear:
+    post:
+      summary: Clear browsing data
+      description: Clears browser data via D-Bus. Scope can be `cache`, `cookies`, or `all`.
+      tags: [Data]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scope]
+              properties:
+                scope:
+                  type: string
+                  enum: [cache, cookies, all]
+                  example: cache
+      responses:
+        "200":
+          description: Data cleared
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - properties:
+                      data:
+                        type: object
+                        properties:
+                          cleared:
+                            type: string
+        "400":
+          description: Invalid scope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "503":
+          description: Kiosk service not running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /extensions:
+    get:
+      summary: List extensions
+      description: Returns all installed JavaScript extensions with their status.
+      tags: [Extensions]
+      responses:
+        "200":
+          description: Extensions list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - properties:
+                      data:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                              example: Performance
+                            version:
+                              type: string
+                              example: "1.0.0"
+                            enabled:
+                              type: boolean
+                            dir_name:
+                              type: string
+                              example: performance
+
+  /extensions/{name}/enable:
+    post:
+      summary: Enable extension
+      description: Removes the `.disabled` marker from the extension directory.
+      tags: [Extensions]
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Extension directory name
+      responses:
+        "200":
+          description: Extension enabled
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - properties:
+                      data:
+                        type: object
+                        properties:
+                          extension:
+                            type: string
+                          status:
+                            type: string
+                            example: enabled
+        "404":
+          description: Extension not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /extensions/{name}/disable:
+    post:
+      summary: Disable extension
+      description: Creates a `.disabled` marker in the extension directory.
+      tags: [Extensions]
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Extension directory name
+      responses:
+        "200":
+          description: Extension disabled
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - properties:
+                      data:
+                        type: object
+                        properties:
+                          extension:
+                            type: string
+                          status:
+                            type: string
+                            example: disabled
+        "404":
+          description: Extension not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /restart:
+    post:
+      summary: Restart kiosk service
+      description: Restarts the `wpe-webkit-kiosk` systemd service.
+      tags: [Service]
+      responses:
+        "200":
+          description: Restart initiated
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - properties:
+                      data:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                            example: restarting
+
+  /system:
+    get:
+      summary: Get system telemetry
+      description: Returns CPU, memory, disk, network, and temperature data from the host system.
+      tags: [System]
+      responses:
+        "200":
+          description: System information
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - properties:
+                      data:
+                        type: object
+                        properties:
+                          uptime_seconds:
+                            type: number
+                            example: 16321.96
+                          load_average:
+                            type: object
+                            properties:
+                              1m:
+                                type: string
+                              5m:
+                                type: string
+                              15m:
+                                type: string
+                          memory:
+                            type: object
+                            properties:
+                              MemTotal_kB:
+                                type: integer
+                              MemFree_kB:
+                                type: integer
+                              MemAvailable_kB:
+                                type: integer
+                          cpu:
+                            type: object
+                            properties:
+                              user:
+                                type: string
+                              system:
+                                type: string
+                              idle:
+                                type: string
+                          disk:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                mount:
+                                  type: string
+                                size:
+                                  type: string
+                                used:
+                                  type: string
+                                avail:
+                                  type: string
+                                use%:
+                                  type: string
+                          network:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                name:
+                                  type: string
+                                rx_bytes:
+                                  type: string
+                                tx_bytes:
+                                  type: string
+                          temperature:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                zone:
+                                  type: string
+                                temp:
+                                  type: string
+                                  example: "51.0"

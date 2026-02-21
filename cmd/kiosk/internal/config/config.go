@@ -30,6 +30,8 @@ var ValidKeys = map[string]bool{
 	"CURSOR_VISIBLE":      true,
 	"EXTENSIONS_DIR":      true,
 	"TTY":                 true,
+	"API_PORT":            true,
+	"API_TOKEN":           true,
 }
 
 // Entry represents a single line in the config file.
