@@ -1,0 +1,5 @@
+Component: main
+Origin: WPE Kiosk APT Repo
+Label: wpe-webkit-kiosk
+Architecture: amd64
+Description: APT repository for wpe-webkit-kiosk

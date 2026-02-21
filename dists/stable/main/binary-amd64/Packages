@@ -1,0 +1,29 @@
+Package: wpe-webkit-kiosk
+Version: 1.1.0
+Architecture: amd64
+Maintainer: Tomasz Mizak
+Priority: optional
+Section: web
+Filename: pool/main/w/wpe-webkit-kiosk/wpe-webkit-kiosk_1.1.0_amd64.deb
+Size: 40716762
+SHA256: 1a241381e4a4cf8fdb85e1b204dea11f8cb6b6fb88d95d157b0efaa9d5e8446c
+SHA1: 69c4204df2a6ee51b96a9c8a82d172806acc55e6
+MD5sum: dc8fd763f50d2b15cee344bc6c890a01
+Description: WPE WebKit kiosk browser
+ Fullscreen web browser for kiosk applications on Wayland, using WPE WebKit
+ with WPEPlatform API. Includes systemd service for daemon mode and D-Bus
+ remote control interface.
+Depends: libegl1, libepoxy0, libglib2.0-0, libgstreamer1.0-0,
+ libgstreamer-plugins-base1.0-0, libgstreamer-gl1.0-0,
+ gstreamer1.0-plugins-bad, libharfbuzz-icu0, libicu74,
+ libsoup-3.0-0, libsqlite3-0, libwayland-client0, libwayland-egl1,
+ libwayland-server0, libwebp7, libxml2, libxslt1.1, libcairo2,
+ libfontconfig1, libfreetype6, libgbm1, libgcrypt20, libxkbcommon0,
+ libatk1.0-0, libatk-bridge2.0-0, libsystemd0, libwoff1, libavif16,
+ libdrm2, libinput10, libatomic1, cage, seatd, wayvnc, kbd,
+ pipewire, pipewire-pulse, wireplumber,
+ gstreamer1.0-alsa,
+ dbus-user-session,
+ alsa-utils,
+ openssl
+
