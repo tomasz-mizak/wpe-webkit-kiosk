@@ -1,0 +1,7 @@
+Origin: WPE Kiosk APT Repo
+Label: wpe-webkit-kiosk
+Codename: stable
+Architectures: amd64
+Components: main
+Description: APT repository for wpe-webkit-kiosk
+SignWith: 7FBA341EC9C95793
